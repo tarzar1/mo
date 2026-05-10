@@ -1,27 +1,24 @@
-"""Vision Control Tool - Desktop App
+"""Vision Control Tool - Desktop App v2
 Live screen feed + OCR + built-in terminal + menu.
-Controla la PC con vision artificial."""
+UI updates via main thread (after), no thread conflicts."""
 
-import os, sys, time, threading, json, queue, cv2, numpy as np
+import os, time, threading, queue, cv2, numpy as np
 import customtkinter as ctk
-from PIL import Image, ImageTk, ImageDraw, ImageFont
+from PIL import Image
 import pyautogui, pytesseract
 
-# Configurar Tesseract
 for p in [r"C:\Program Files\Tesseract-OCR\tesseract.exe",
           r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"]:
     if os.path.exists(p): pytesseract.pytesseract.tesseract_cmd = p; break
 
 pyautogui.FAILSAFE = True
 pyautogui.PAUSE = 0.05
-
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 class VisionTool:
     def __init__(self):
         self.mode = "OBSERVADOR"
-        self.running = True
         self.fps = 20
         self.frame_count = 0
         self.fps_counter = 0
@@ -33,365 +30,281 @@ class VisionTool:
         self.feed_w, self.feed_h = 640, 360
         self.scale_x = self.feed_w / self.screen_w
         self.scale_y = self.feed_h / self.screen_h
+        self.cmd_queue = queue.Queue()
 
-        # UI
         self.win = ctk.CTk()
         self.win.title("Vision Control Tool")
         self.win.geometry("1100x700")
-        self.win.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.win.protocol("WM_DELETE_WINDOW", self._close)
 
-        self._build_menu()
         self._build_ui()
-
-        # Threads
-        self.cmd_queue = queue.Queue()
-        self.ocr_lock = threading.Lock()
-        self.frame_lock = threading.Lock()
-        self.current_frame = None
-
-        self._start_threads()
-
-    def _build_menu(self):
-        menubar = ctk.CTkFrame(self.win, height=30)
-        menubar.pack(fill="x", side="top", padx=0, pady=0)
-
-        # Mode
-        mode_btn = ctk.CTkButton(menubar, text="Modo: OBSERVADOR", width=140, height=26,
-                                  fg_color="transparent", border_width=1,
-                                  command=self.toggle_mode)
-        mode_btn.pack(side="left", padx=4, pady=2)
-        self.mode_btn = mode_btn
-
-        # Quick actions
-        ctk.CTkButton(menubar, text="Ver OCR", width=80, height=26,
-                      fg_color="transparent", border_width=1,
-                      command=self.show_ocr).pack(side="left", padx=2, pady=2)
-
-        ctk.CTkButton(menubar, text="Click Texto", width=90, height=26,
-                      fg_color="transparent", border_width=1,
-                      command=self.prompt_click).pack(side="left", padx=2, pady=2)
-
-        ctk.CTkButton(menubar, text="Escribir", width=80, height=26,
-                      fg_color="transparent", border_width=1,
-                      command=self.prompt_type).pack(side="left", padx=2, pady=2)
-
-        ctk.CTkButton(menubar, text="Presionar Tecla", width=110, height=26,
-                      fg_color="transparent", border_width=1,
-                      command=self.prompt_key).pack(side="left", padx=2, pady=2)
-
-        # Help
-        ctk.CTkButton(menubar, text="?", width=30, height=26,
-                      fg_color="transparent", border_width=1,
-                      command=self.show_help).pack(side="right", padx=4, pady=2)
+        self._start()
+        self.win.mainloop()
 
     def _build_ui(self):
+        # Menu bar
+        menubar = ctk.CTkFrame(self.win, height=30)
+        menubar.pack(fill="x", side="top")
+
+        self.mode_btn = ctk.CTkButton(menubar, text="Modo: OBSERVADOR", width=140, height=26,
+                                       fg_color="transparent", border_width=1,
+                                       command=self._toggle_mode)
+        self.mode_btn.pack(side="left", padx=4, pady=2)
+
+        ctk.CTkButton(menubar, text="Ver OCR", width=70, height=26,
+                      fg_color="transparent", border_width=1,
+                      command=self._show_ocr).pack(side="left", padx=2)
+
+        ctk.CTkButton(menubar, text="Click", width=60, height=26,
+                      fg_color="transparent", border_width=1,
+                      command=self._prompt_click).pack(side="left", padx=2)
+
+        ctk.CTkButton(menubar, text="Escribir", width=70, height=26,
+                      fg_color="transparent", border_width=1,
+                      command=self._prompt_type).pack(side="left", padx=2)
+
+        ctk.CTkButton(menubar, text="Tecla", width=60, height=26,
+                      fg_color="transparent", border_width=1,
+                      command=self._prompt_key).pack(side="left", padx=2)
+
+        ctk.CTkButton(menubar, text="?", width=30, height=26,
+                      fg_color="transparent", border_width=1,
+                      command=self._show_help).pack(side="right", padx=4)
+
+        # Main content
         main = ctk.CTkFrame(self.win)
         main.pack(fill="both", expand=True, padx=4, pady=4)
 
-        # --- LEFT: Live Feed ---
-        feed_frame = ctk.CTkFrame(main)
-        feed_frame.pack(side="left", fill="both", expand=True, padx=2)
+        # LEFT: Feed
+        left = ctk.CTkFrame(main)
+        left.pack(side="left", fill="both", expand=True, padx=2)
 
-        feed_label = ctk.CTkLabel(feed_frame, text="Vision Feed", font=("Consolas", 12, "bold"))
-        feed_label.pack(pady=2)
+        ctk.CTkLabel(left, text="Live Feed", font=("Consolas", 11, "bold")).pack()
+        self.feed_label = ctk.CTkLabel(left, text="", width=self.feed_w, height=self.feed_h)
+        self.feed_label.pack(padx=4, pady=2)
 
-        self.feed_canvas = ctk.CTkLabel(feed_frame, text="", width=self.feed_w, height=self.feed_h,
-                                         fg_color="black")
-        self.feed_canvas.pack(padx=4, pady=2)
+        # RIGHT: OCR + Log
+        right = ctk.CTkFrame(main, width=300)
+        right.pack(side="right", fill="both", padx=2)
 
-        # Detections list
-        det_label = ctk.CTkLabel(feed_frame, text="Detecciones:", font=("Consolas", 10))
-        det_label.pack(anchor="w", padx=8)
-        self.det_list = ctk.CTkTextbox(feed_frame, height=80, font=("Consolas", 9))
-        self.det_list.pack(fill="x", padx=6, pady=2)
+        ctk.CTkLabel(right, text="OCR Output", font=("Consolas", 11, "bold")).pack()
+        self.ocr_box = ctk.CTkTextbox(right, font=("Consolas", 9), width=280)
+        self.ocr_box.pack(fill="both", expand=True, padx=4, pady=2)
 
-        # --- RIGHT: OCR + Output ---
-        right_frame = ctk.CTkFrame(main, width=320)
-        right_frame.pack(side="right", fill="both", padx=2)
-        right_frame.pack_propagate(False)
+        ctk.CTkLabel(right, text="Log", font=("Consolas", 10)).pack()
+        self.log_box = ctk.CTkTextbox(right, font=("Consolas", 8), height=90, width=280)
+        self.log_box.pack(fill="x", padx=4, pady=2)
 
-        ctk.CTkLabel(right_frame, text="OCR Output", font=("Consolas", 12, "bold")).pack(pady=2)
-        self.ocr_text = ctk.CTkTextbox(right_frame, font=("Consolas", 9), width=300)
-        self.ocr_text.pack(fill="both", expand=True, padx=4, pady=2)
-
-        # Log
-        ctk.CTkLabel(right_frame, text="Log", font=("Consolas", 10)).pack(pady=2)
-        self.log_text = ctk.CTkTextbox(right_frame, font=("Consolas", 8), height=100, width=300)
-        self.log_text.pack(fill="x", padx=4, pady=2)
-
-        # --- BOTTOM: Command input ---
+        # BOTTOM: Terminal
         cmd_frame = ctk.CTkFrame(self.win, height=40)
         cmd_frame.pack(fill="x", side="bottom", padx=4, pady=4)
 
-        self.cmd_entry = ctk.CTkEntry(cmd_frame, placeholder_text="Comando (click Chrome, escribir hola, presionar enter, etc.)",
+        self.cmd_entry = ctk.CTkEntry(cmd_frame, placeholder_text="click Chrome | escribir hola | presionar enter | mode control",
                                        font=("Consolas", 11))
         self.cmd_entry.pack(side="left", fill="x", expand=True, padx=4, pady=4)
-        self.cmd_entry.bind("<Return>", lambda e: self.execute_command())
+        self.cmd_entry.bind("<Return>", lambda e: self._send_cmd())
 
-        ctk.CTkButton(cmd_frame, text="Enviar", width=70, command=self.execute_command).pack(side="right", padx=4, pady=4)
+        ctk.CTkButton(cmd_frame, text="Enviar", width=70, command=self._send_cmd).pack(side="right", padx=4, pady=4)
 
-        # --- STATUS BAR ---
-        self.status = ctk.CTkLabel(self.win, text="Listo | OBSERVADOR", font=("Consolas", 9),
-                                    fg_color="#1a1a2e", height=20)
-        self.status.pack(fill="x", side="bottom")
+        # Status bar
+        self.st_bar = ctk.CTkLabel(self.win, text="Listo", font=("Consolas", 9), height=20)
+        self.st_bar.pack(fill="x", side="bottom")
 
-    def _start_threads(self):
-        threading.Thread(target=self.capture_loop, daemon=True).start()
-        threading.Thread(target=self.ocr_loop, daemon=True).start()
-        threading.Thread(target=self.display_loop, daemon=True).start()
+    def _start(self):
+        self._log("Vision Control Tool iniciada")
+        self._log(f"Pantalla: {self.screen_w}x{self.screen_h}")
+        self._update_feed()
 
-    def log(self, msg):
-        self.log_text.insert("end", f"{msg}\n")
-        self.log_text.see("end")
+    def _log(self, msg):
+        self.log_box.insert("end", f"{msg}\n")
+        self.log_box.see("end")
 
-    def toggle_mode(self):
+    def _toggle_mode(self):
         self.mode = "CONTROL" if self.mode == "OBSERVADOR" else "OBSERVADOR"
-        color = "#8B0000" if self.mode == "CONTROL" else "#1a3a1a"
-        text = f"Modo: {self.mode}"
-        self.mode_btn.configure(text=text, fg_color=color)
-        self.log(f"[MODO] {self.mode}")
+        self.mode_btn.configure(text=f"Modo: {self.mode}",
+            fg_color="#8B0000" if self.mode == "CONTROL" else "#1a3a1a")
+        self._log(f"MODO: {self.mode}")
 
-    def execute_command(self):
-        cmd = self.cmd_entry.get().strip()
-        self.cmd_entry.delete(0, "end")
-        if not cmd:
-            return
-        self.cmd_queue.put(cmd)
-        self.log(f"[CMD] {cmd}")
+    def _show_ocr(self):
+        self.ocr_box.delete("1.0", "end")
+        self.ocr_box.insert("1.0", self.last_ocr or "(Procesando...)")
 
-    def prompt_click(self):
-        dialog = ctk.CTkInputDialog(title="Click en Texto", text="Texto a buscar y clickear:")
-        text = dialog.get_input()
-        if text:
-            self.cmd_queue.put(f"click {text}")
+    def _prompt_click(self):
+        d = ctk.CTkInputDialog(title="Click en Texto", text="Texto a buscar y clickear:")
+        t = d.get_input()
+        if t: self._exec(f"click {t}")
 
-    def prompt_type(self):
-        dialog = ctk.CTkInputDialog(title="Escribir", text="Texto a escribir:")
-        text = dialog.get_input()
-        if text:
-            self.cmd_queue.put(f"escribir {text}")
+    def _prompt_type(self):
+        d = ctk.CTkInputDialog(title="Escribir", text="Texto a escribir:")
+        t = d.get_input()
+        if t: self._exec(f"escribir {t}")
 
-    def prompt_key(self):
-        dialog = ctk.CTkInputDialog(title="Presionar Tecla", text="Tecla (enter, tab, esc, f5, etc.):")
-        key = dialog.get_input()
-        if key:
-            self.cmd_queue.put(f"presionar {key}")
+    def _prompt_key(self):
+        d = ctk.CTkInputDialog(title="Presionar Tecla", text="Tecla (enter, tab, esc, f5):")
+        t = d.get_input()
+        if t: self._exec(f"presionar {t}")
 
-    def show_ocr(self):
-        self.ocr_text.delete("1.0", "end")
-        self.ocr_text.insert("1.0", self.last_ocr or "(OCR procesando...)")
-
-    def show_help(self):
-        help_text = """COMANDOS:
-  mode control     Activar control
-  mode observador  Solo observar
-  click <texto>    Click en texto detectado
-  escribir <t>     Escribir texto
-  presionar <k>    Tecla (enter, tab, esc, f5)
-  hotkey <c1+c2>   Combinacion (ctrl+v, alt+tab)
-  mover <x,y>      Mover mouse
-  dc <x,y>         Doble click
-  scroll <n>       Scroll
-  screen           Resolucion de pantalla
-  cursor           Ver posicion del cursor"""
-
+    def _show_help(self):
         d = ctk.CTkToplevel(self.win)
         d.title("Ayuda")
         d.geometry("400x400")
-        lbl = ctk.CTkLabel(d, text=help_text, font=("Consolas", 11), justify="left")
-        lbl.pack(padx=20, pady=20)
+        ctk.CTkLabel(d, text="""COMANDOS:
+  mode control      Activar control
+  mode observador   Solo observar
+  click <texto>     Click en texto
+  escribir <t>      Escribir texto
+  presionar <t>     Tecla (enter,tab,esc,f5)
+  hotkey <c1+c2>    Combinacion (ctrl+v,alt+tab)
+  mover <x,y>       Mover mouse
+  dc <x,y>          Doble click
+  scroll <n>        Scroll (+/-)
+  screen            Resolucion
+  cursor            Pos. cursor""", font=("Consolas", 12), justify="left").pack(padx=20, pady=20)
 
-    # ─── THREADS ─────────────────────────────────────
+    def _send_cmd(self):
+        cmd = self.cmd_entry.get().strip()
+        self.cmd_entry.delete(0, "end")
+        if cmd:
+            self._log(f">> {cmd}")
+            self._exec(cmd)
 
-    def capture_loop(self):
-        while self.running:
-            try:
-                img = pyautogui.screenshot()
-                frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-                with self.frame_lock:
-                    self.current_frame = frame
-                self.frame_count += 1
-                self.fps_counter += 1
-                now = time.time()
-                if now - self.fps_timer > 1.0:
-                    self.display_fps = self.fps_counter
-                    self.fps_counter = 0
-                    self.fps_timer = now
-                # Process commands
-                self._process_queue()
-            except:
-                pass
-            time.sleep(1.0 / self.fps)
+    def _exec(self, cmd):
+        p = cmd.split(' ', 1)
+        a = p[0].lower()
+        g = p[1] if len(p) > 1 else None
 
-    def _process_queue(self):
-        while not self.cmd_queue.empty():
-            try:
-                cmd = self.cmd_queue.get_nowait()
-                resp = self._handle_command(cmd)
-                if resp:
-                    self.log(f"  -> {resp}")
-            except:
-                pass
-
-    def _handle_command(self, cmd):
-        parts = cmd.split(' ', 1)
-        action = parts[0].lower()
-        arg = parts[1] if len(parts) > 1 else None
-
-        if action == 'mode':
-            if arg in ('control', 'observador'):
-                self.mode = 'CONTROL' if arg == 'control' else 'OBSERVADOR'
+        if a == 'mode':
+            if g in ('control', 'observador'):
+                self.mode = "CONTROL" if g == "control" else "OBSERVADOR"
                 self.mode_btn.configure(text=f"Modo: {self.mode}",
                     fg_color="#8B0000" if self.mode == "CONTROL" else "#1a3a1a")
-                return f"MODO: {self.mode}"
-            return f"Modo actual: {self.mode}"
+                self._log(f"MODO: {self.mode}")
+            return
 
-        if self.mode != "CONTROL":
-            return "Activa modo CONTROL primero"
+        if self.mode != "CONTROL" and a not in ('screen', 'cursor'):
+            self._log("Activa modo CONTROL primero")
+            return
 
         try:
-            if action == 'click' and arg:
-                return self._click_text(arg)
-            elif action == 'escribir' and arg:
-                pyautogui.write(arg, interval=0.04)
-                return f"Escrito: '{arg}'"
-            elif action == 'presionar' and arg:
-                pyautogui.press(arg)
-                return f"Tecla: '{arg}'"
-            elif action == 'hotkey' and arg:
-                keys = arg.split('+')
-                pyautogui.hotkey(*keys)
-                return f"Hotkey: {'+'.join(keys)}"
-            elif action == 'mover' and arg:
-                x, y = map(int, arg.split(','))
+            if a == 'click' and g:
+                self._click_text(g)
+            elif a == 'escribir' and g:
+                pyautogui.write(g, interval=0.04)
+                self._log(f"Escrito: {g}")
+            elif a == 'presionar' and g:
+                pyautogui.press(g)
+                self._log(f"Tecla: {g}")
+            elif a == 'hotkey' and g:
+                pyautogui.hotkey(*g.split('+'))
+                self._log(f"Hotkey: {g}")
+            elif a == 'mover' and g:
+                x, y = map(int, g.split(','))
                 pyautogui.moveTo(x, y, duration=0.2)
-                return f"Mouse movido a ({x},{y})"
-            elif action == 'dc' and arg:
-                x, y = map(int, arg.split(','))
+                self._log(f"Mouse: ({x},{y})")
+            elif a == 'dc' and g:
+                x, y = map(int, g.split(','))
                 pyautogui.doubleClick(x, y)
-                return f"Doble click en ({x},{y})"
-            elif action == 'scroll' and arg:
-                pyautogui.scroll(int(arg))
-                return f"Scroll: {arg}"
-            elif action == 'screen':
-                return f"Pantalla: {self.screen_w}x{self.screen_h}"
-            elif action == 'cursor':
+                self._log(f"DC: ({x},{y})")
+            elif a == 'scroll' and g:
+                pyautogui.scroll(int(g))
+                self._log(f"Scroll: {g}")
+            elif a == 'screen':
+                self._log(f"{self.screen_w}x{self.screen_h}")
+            elif a == 'cursor':
                 x, y = pyautogui.position()
-                return f"Cursor: ({x}, {y})"
-            else:
-                return f"Comando: {action}"
+                self._log(f"Cursor: ({x},{y})")
         except Exception as e:
-            return f"Error: {e}"
+            self._log(f"Error: {e}")
 
     def _click_text(self, text):
-        """Busca texto en las detecciones y clickea"""
         for d in self.detections:
             if text.lower() in d['word'].lower():
                 pyautogui.click(d['x'], d['y'])
-                return f"CLICK en '{d['word']}' ({d['x']},{d['y']})"
-        return f"No encontrado: '{text}'"
+                self._log(f"CLICK '{d['word']}' ({d['x']},{d['y']})")
+                return
+        self._log(f"No encontrado: {text}")
 
-    def ocr_loop(self):
-        while self.running:
-            time.sleep(1.5)
-            try:
-                img = pyautogui.screenshot()
-                gray = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
-                gray = cv2.resize(gray, (0,0), fx=0.5, fy=0.5)
+    def _update_feed(self):
+        """Actualiza el feed desde el main thread (via after)"""
+        try:
+            # Capturar frame
+            img = pyautogui.screenshot()
+            frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+            self.frame_count += 1
 
-                self.last_ocr = pytesseract.image_to_string(gray)
-
-                data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT)
-                det = []
-                for i in range(len(data['text'])):
-                    try:
-                        conf = int(data['conf'][i])
-                        word = data['text'][i].strip()
-                        if conf > 40 and len(word) > 2:
-                            det.append({
-                                'word': word,
-                                'x': (data['left'][i] + data['width'][i]//2) * 2,
-                                'y': (data['top'][i] + data['height'][i]//2) * 2,
-                                'w': data['width'][i] * 2,
-                                'h': data['height'][i] * 2,
-                                'conf': conf
-                            })
-                    except: pass
-                self.detections = det
-
-                # Update det list UI
-                lines = [f"{d['word']} ({d['x']},{d['y']})" for d in det[:20]]
-                self.det_list.delete("1.0", "end")
-                self.det_list.insert("1.0", "\n".join(lines))
-            except:
-                pass
-
-    def display_loop(self):
-        prev_update = 0
-        while self.running:
-            time.sleep(0.05)  # 20 FPS display
+            # FPS counter
+            self.fps_counter += 1
             now = time.time()
-            if now - prev_update < 0.05:
-                continue
-            prev_update = now
+            if now - self.fps_timer > 1.0:
+                self.display_fps = self.fps_counter
+                self.fps_counter = 0
+                self.fps_timer = now
 
-            with self.frame_lock:
-                frame = self.current_frame
-            if frame is None:
-                continue
+            # OCR cada 1.5s
+            if self.frame_count % 30 == 0:
+                threading.Thread(target=self._run_ocr, daemon=True).start()
 
+            # Dibujar feed
             display = cv2.resize(frame, (self.feed_w, self.feed_h))
-
-            # Dibujar detecciones en el feed
             for d in self.detections[:15]:
-                rx = int(d['x'] * self.scale_x)
-                ry = int(d['y'] * self.scale_y)
-                rw = int(d['w'] * self.scale_x)
-                rh = int(d['h'] * self.scale_y)
+                rx = int(d['x'] * self.scale_x); ry = int(d['y'] * self.scale_y)
+                rw = int(d['w'] * self.scale_x); rh = int(d['h'] * self.scale_y)
                 if 0 <= rx < self.feed_w and 0 <= ry < self.feed_h:
-                    cv2.rectangle(display, (rx - rw//2, ry - rh//2),
-                                 (rx + rw//2, ry + rh//2), (0, 255, 100), 1)
+                    cv2.rectangle(display, (rx-rw//2, ry-rh//2), (rx+rw//2, ry+rh//2), (0,255,100), 1)
 
-            # Texto HUD
-            cv2.putText(display, f"{self.mode} | {self.display_fps} FPS",
-                       (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4,
-                       (0, 255, 0) if self.mode == "OBSERVADOR" else (0, 80, 255), 1)
+            hud_color = (0, 255, 0) if self.mode == "OBSERVADOR" else (0, 80, 255)
+            cv2.putText(display, f"{self.mode} | {self.display_fps}fps", (5, 15),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, hud_color, 1)
 
-            # Mostrar cursor
             mx, my = pyautogui.position()
-            cux = int(mx * self.scale_x)
-            cuy = int(my * self.scale_y)
+            cux, cuy = int(mx * self.scale_x), int(my * self.scale_y)
             if 0 <= cux < self.feed_w and 0 <= cuy < self.feed_h:
                 cv2.drawMarker(display, (cux, cuy), (0, 255, 255), cv2.MARKER_CROSS, 8, 1)
 
-            # Update OCR text area
-            if now - getattr(self, '_last_ocr_update', 0) > 1.5:
-                self._last_ocr_update = now
-                self.ocr_text.delete("1.0", "end")
-                self.ocr_text.insert("1.0", self.last_ocr[:1000] or "(Procesando...)")
-
-            # Update status
-            mx2, my2 = pyautogui.position()
-            self.status.configure(
-                text=f"{self.mode} | {self.display_fps} FPS | {self.screen_w}x{self.screen_h} | Cursor: {mx2},{my2}")
-
-            # Convertir a PIL y mostrar
+            # Mostrar
             rgb = cv2.cvtColor(display, cv2.COLOR_BGR2RGB)
             pil_img = Image.fromarray(rgb)
             ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(self.feed_w, self.feed_h))
-            self.feed_canvas.configure(image=ctk_img, text="")
+            self.feed_label.configure(image=ctk_img, text="")
 
-    def on_close(self):
-        self.running = False
+            # Status
+            self.st_bar.configure(text=f"{self.mode} | {self.display_fps}fps | {self.screen_w}x{self.screen_h} | Cursor:{mx},{my}")
+
+            # OCR update
+            if now - getattr(self, '_ocr_ui_timer', 0) > 1.5 and self.last_ocr:
+                self._ocr_ui_timer = now
+                self.ocr_box.delete("1.0", "end")
+                self.ocr_box.insert("1.0", self.last_ocr[:1200])
+
+        except Exception as e:
+            pass
+
+        self.win.after(50, self._update_feed)  # ~20 fps
+
+    def _run_ocr(self):
+        try:
+            img = pyautogui.screenshot()
+            gray = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
+            gray = cv2.resize(gray, (0,0), fx=0.5, fy=0.5)
+            self.last_ocr = pytesseract.image_to_string(gray)
+
+            data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT)
+            det = []
+            for i in range(len(data['text'])):
+                try:
+                    conf = int(data['conf'][i])
+                    word = data['text'][i].strip()
+                    if conf > 40 and len(word) > 2:
+                        det.append({'word': word,
+                            'x': (data['left'][i]+data['width'][i]//2)*2,
+                            'y': (data['top'][i]+data['height'][i]//2)*2,
+                            'w': data['width'][i]*2, 'h': data['height'][i]*2, 'conf': conf})
+                except: pass
+            self.detections = det
+        except: pass
+
+    def _close(self):
         self.win.destroy()
 
-    def run(self):
-        self.log("[INIT] Vision Control Tool iniciada")
-        self.log(f"[INIT] Pantalla: {self.screen_w}x{self.screen_h}")
-        self.log(f"[INIT] Feed: {self.feed_w}x{self.feed_h}")
-
-        self.win.mainloop()
-
 if __name__ == "__main__":
-    app = VisionTool()
-    app.run()
+    VisionTool()
