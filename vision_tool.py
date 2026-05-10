@@ -192,6 +192,8 @@ class VisionToolPro:
     def _start(self):
         self._log("Vision Pro iniciada")
         self._log(f"Escritorio agente: {self.agent_desktop}")
+        # Captura inicial del escritorio 2
+        threading.Thread(target=self._capture_agent_frame, daemon=True).start()
         self._update_feed()
 
     def _log(self, msg):
@@ -235,6 +237,10 @@ class VisionToolPro:
         """Refresca el feed del escritorio 2 manualmente"""
         self._log("Refrescando feed del escritorio 2...")
         self._capture_agent_frame()
+        if self.last_agent_frame:
+            self._log(f"Capturado: {self.last_agent_frame.size[0]}x{self.last_agent_frame.size[1]}")
+        else:
+            self._log("ERROR: No se pudo capturar escritorio 2")
 
     def _capture_agent_frame(self):
         """Cambia al escritorio 2, captura, vuelve. Rapido (<400ms)"""
@@ -244,7 +250,7 @@ class VisionToolPro:
             self._last_capture_time = time.time()
             return
         self.switcher.go_agent()
-        time.sleep(0.2)
+        time.sleep(0.25)
         img = ImageGrab.grab(all_screens=True)
         self.last_agent_frame = img
         self._last_capture_time = time.time()
