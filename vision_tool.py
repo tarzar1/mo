@@ -85,6 +85,8 @@ class VisionToolPro:
         self.last_ocr = ""
         self.detections = []
         self.cmd_queue = queue.Queue()
+        self.last_agent_frame = None  # Cache: ultimo frame del escritorio 2
+        self.feed_active = True  # Feed en vivo ON/OFF
 
         sw, sh = pyautogui.size()
         self.feed_w = 800
@@ -122,6 +124,14 @@ class VisionToolPro:
         ctk.CTkButton(mb, text="Aprobar Plan", width=90, height=26,
             fg_color="transparent", border_width=1,
             command=self._approve_plan).pack(side="left", padx=3, pady=2)
+
+        self.feed_btn = ctk.CTkButton(mb, text="Feed: ON", width=70, height=26,
+            fg_color="#1a3a1a", border_width=1, command=self._toggle_feed)
+        self.feed_btn.pack(side="left", padx=3, pady=2)
+
+        ctk.CTkButton(mb, text="Refrescar", width=70, height=26,
+            fg_color="transparent", border_width=1,
+            command=self._manual_refresh).pack(side="left", padx=3, pady=2)
 
         ctk.CTkButton(mb, text="?", width=25, height=26,
             fg_color="transparent", border_width=1,
@@ -214,6 +224,32 @@ class VisionToolPro:
         self.desk_btn.configure(text=f"Escritorio {self.desktop}")
         self.switcher.switch_to(self.desktop)
         self._log(f"Cambiado a Escritorio {self.desktop}")
+
+    def _toggle_feed(self):
+        self.feed_active = not self.feed_active
+        self.feed_btn.configure(text=f"Feed: {'ON' if self.feed_active else 'OFF'}",
+            fg_color="#1a3a1a" if self.feed_active else "transparent")
+        self._log(f"Feed escritorio 2: {'ACTIVO' if self.feed_active else 'PAUSADO'}")
+
+    def _manual_refresh(self):
+        """Refresca el feed del escritorio 2 manualmente"""
+        self._log("Refrescando feed del escritorio 2...")
+        self._capture_agent_frame()
+
+    def _capture_agent_frame(self):
+        """Cambia al escritorio 2, captura, vuelve. Rapido (<400ms)"""
+        if self.desktop == self.agent_desktop:
+            img = ImageGrab.grab(all_screens=True)
+            self.last_agent_frame = img
+            self._last_capture_time = time.time()
+            return
+        self.switcher.go_agent()
+        time.sleep(0.2)
+        img = ImageGrab.grab(all_screens=True)
+        self.last_agent_frame = img
+        self._last_capture_time = time.time()
+        self.switcher.go_user()
+        time.sleep(0.1)
 
     def _approve_plan(self):
         if self.current_plan:
@@ -450,10 +486,9 @@ EJEMPLOS:
 
     def _update_feed(self):
         try:
-            img = ImageGrab.grab(all_screens=True)
-            frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
             self.frame_count += 1
 
+            # FPS
             self.fps_counter += 1
             now = time.time()
             if now - self.fps_timer > 1.0:
@@ -461,27 +496,48 @@ EJEMPLOS:
                 self.fps_counter = 0
                 self.fps_timer = now
 
+            # Cada ~2.5s (40 frames a 15fps): capturar escritorio 2
+            if self.feed_active and self.frame_count % 40 == 0:
+                self._capture_agent_frame()
+
+            # OCR cada 30 frames
             if self.frame_count % 30 == 0:
                 threading.Thread(target=self._run_ocr, daemon=True).start()
 
+            # Usar frame cacheado del escritorio 2, o captura actual
+            frame_source = self.last_agent_frame
+            if frame_source is None:
+                frame_source = ImageGrab.grab(all_screens=True)
+
+            frame = cv2.cvtColor(np.array(frame_source), cv2.COLOR_RGB2BGR)
             display = cv2.resize(frame, (self.feed_w, self.feed_h))
+
+            # Overlay: bounding boxes
             for d in self.detections[:10]:
                 rx = int(d['x'] * self.feed_w / frame.shape[1])
                 ry = int(d['y'] * self.feed_h / frame.shape[0])
                 if 0 <= rx < self.feed_w and 0 <= ry < self.feed_h:
                     cv2.rectangle(display, (rx-15, ry-10), (rx+15, ry+10), (0, 255, 100), 1)
 
-            info = f"{self.mode} | {self.display_fps}fps | Escritorio {self.desktop}"
+            # HUD
+            info = f"{self.mode} | {self.display_fps}fps | Escritorio {self.agent_desktop}"
             cv2.putText(display, info, (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4,
                        (0, 255, 100) if self.mode == "OBSERVADOR" else (0, 80, 255), 1)
+
+            # Indicador de feed cacheado
+            if self.feed_active and self.last_agent_frame is not None:
+                age = (now - getattr(self, '_last_capture_time', now))
+                cv2.putText(display, f"Cache: {age:.0f}s", (5, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.3,
+                           (150, 150, 150), 1)
 
             rgb = cv2.cvtColor(display, cv2.COLOR_BGR2RGB)
             ctk_img = ctk.CTkImage(light_image=Image.fromarray(rgb), size=(self.feed_w, self.feed_h))
             self.feed.configure(image=ctk_img, text="")
 
             mx, my = pyautogui.position()
+            plan_steps = f"{self.plan_step}/{len(self.current_plan['steps'])}" if self.current_plan else "0/0"
             self.st_bar.configure(
-                text=f"{self.mode} | {self.display_fps}fps | Escritorio {self.desktop} | Plan: {self.plan_step}/{len(self.current_plan['steps']) if self.current_plan else 0} pasos | Cursor: ({mx},{my})")
+                text=f"{self.mode} | {self.display_fps}fps | Escritorio {self.agent_desktop} | Plan: {plan_steps} pasos | Cursor: ({mx},{my})")
         except: pass
         self.win.after(60, self._update_feed)
 
