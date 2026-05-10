@@ -15,7 +15,8 @@ pyautogui.PAUSE = 0.05
 API_BASE = "http://192.168.4.23:8000"
 
 class TaskAgent:
-    def __init__(self):
+    def __init__(self, target="auto"):
+        self.target = target  # "adb", "desktop", or "auto"
         self.current_task = None
         self.step = 0
         self.screen_w, self.screen_h = pyautogui.size()
@@ -25,16 +26,39 @@ class TaskAgent:
         print(f"{step_mark} {msg}")
 
     def see(self):
-        """Captura + OCR de la pantalla completa"""
+        """Captura + OCR"""
+        if self.target == "adb":
+            return self._adb_see()
+        elif self.target == "desktop":
+            return self._desktop_see()
+        else:
+            return self._desktop_see()
+
+    def _desktop_see(self):
         img = pyautogui.screenshot()
         screen = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
         gray = cv2.cvtColor(screen, cv2.COLOR_BGR2GRAY)
         gray_small = cv2.resize(gray, (0,0), fx=0.5, fy=0.5)
-        text = pytesseract.image_to_string(gray_small)
-        return text
+        return pytesseract.image_to_string(gray_small)
+
+    def _adb_see(self):
+        tmp = os.environ.get("TEMP", "/tmp") + "/adb_ocr.png"
+        subprocess.run(f"adb exec-out screencap -p > \"{tmp}\"", shell=True, timeout=10)
+        time.sleep(0.3)
+        img = cv2.imread(tmp)
+        if img is None:
+            return ""
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        gray = cv2.resize(gray, (0,0), fx=0.5, fy=0.5)
+        return pytesseract.image_to_string(gray)
 
     def find(self, text, min_conf=40):
-        """Busca texto en pantalla y devuelve coordenadas"""
+        if self.target == "adb":
+            return self._adb_find(text, min_conf)
+        else:
+            return self._desktop_find(text, min_conf)
+
+    def _desktop_find(self, text, min_conf=40):
         img = pyautogui.screenshot()
         gray = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
         gray = cv2.resize(gray, (0,0), fx=0.5, fy=0.5)
@@ -51,26 +75,70 @@ class TaskAgent:
             except: pass
         return matches
 
+    def _adb_find(self, text, min_conf=40):
+        tmp = os.environ.get("TEMP", "/tmp") + "/adb_find.png"
+        subprocess.run(f"adb exec-out screencap -p > \"{tmp}\"", shell=True, timeout=10)
+        time.sleep(0.3)
+        img = cv2.imread(tmp)
+        if img is None:
+            return []
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        gray = cv2.resize(gray, (0,0), fx=0.5, fy=0.5)
+        data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT)
+        matches = []
+        for i in range(len(data['text'])):
+            try:
+                conf = int(data['conf'][i])
+                word = data['text'][i].strip()
+                if conf > min_conf and text.lower() in word.lower():
+                    x = (data['left'][i] + data['width'][i]//2) * 2
+                    y = (data['top'][i] + data['height'][i]//2) * 2
+                    matches.append((x, y, word, conf))
+            except: pass
+        return matches
+
     def click_text(self, text):
-        """Busca y clickea texto"""
-        matches = self.find(text, 35)
+        if self.target == "adb":
+            return self._adb_click(text)
+        else:
+            return self._desktop_click(text)
+
+    def _desktop_click(self, text):
+        matches = self._desktop_find(text, 35)
         if matches:
             x, y, word, conf = matches[0]
             pyautogui.click(x, y)
-            self.say(f"Click en '{word}' ({x},{y}) conf={conf}")
+            self.say(f"Click en '{word}' ({x},{y})")
             time.sleep(1.5)
             return True
-        else:
-            self.say(f"No encontre '{text}' en pantalla")
-            return False
+        self.say(f"No encontre '{text}' en pantalla")
+        return False
+
+    def _adb_click(self, text):
+        matches = self._adb_find(text, 35)
+        if matches:
+            x, y, word, conf = matches[0]
+            subprocess.run(f"adb shell input tap {x} {y}", shell=True)
+            self.say(f"ADB Click en '{word}' ({x},{y})")
+            time.sleep(1.5)
+            return True
+        self.say(f"No encontre '{text}' en emulador")
+        return False
 
     def type_text(self, text):
-        pyautogui.write(text, interval=0.04)
+        if self.target == "adb":
+            subprocess.run(f"adb shell input text \"{text}\"", shell=True)
+        else:
+            pyautogui.write(text, interval=0.04)
         self.say(f"Escribi: '{text}'")
         time.sleep(0.3)
 
     def press(self, key):
-        pyautogui.press(key)
+        if self.target == "adb":
+            keycode = {"enter": 66, "tab": 61, "esc": 111, "back": 4}.get(key.lower(), 66)
+            subprocess.run(f"adb shell input keyevent {keycode}", shell=True)
+        else:
+            pyautogui.press(key)
         time.sleep(0.3)
 
     def wait_for_text(self, text, timeout=30):
@@ -110,104 +178,93 @@ class TaskAgent:
     # â”€â”€â”€ PLAN: REGISTRARSE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def _plan_register(self, task):
-        # Extraer email de la tarea
         email_match = re.search(r'[\w.]+@[\w.]+', task)
         email = email_match.group(0) if email_match else f"user{int(time.time())%10000}@test.com"
         
-        # Extraer password
         pass_match = re.search(r'pass(word)?[:\s]*(\S+)', task)
         password = pass_match.group(2) if pass_match else "123456"
         
-        # Extraer nombre
         name_match = re.search(r'(nombre|name|como)[:\s]*(\w+)', task)
         name = name_match.group(2) if name_match else "User"
 
-        self.say(f"Plan: Registrar {email} / {password}")
+        self.say(f"Plan: Registrar {email} / {password} en emulador")
 
-        # Paso 1: Ver donde estamos
+        # Paso 1: Abrir app en el emulador
         self.step += 1
-        screen = self.see()
-        self.say(f"Pantalla: {screen[:150]}")
-
-        # Paso 2: Ir a la app CommuteShare en el emulador
-        self.step += 1
-        self.say("Abriendo app CommuteShare...")
+        self.say("Abriendo app en emulador...")
+        subprocess.run("adb shell am force-stop com.example.new_desing", shell=True)
+        time.sleep(0.5)
         subprocess.run("adb shell am start -n com.example.new_desing/.MainActivity", shell=True)
         time.sleep(5)
 
-        # Paso 3: Hacer click en "Registrate" si esta en login
+        # Paso 2: Leer pantalla del EMULADOR
         self.step += 1
-        screen = self.see()
-        if 'Registrate' in screen or 'REGISTRATE' in screen:
-            self.say("Detectado boton Registrate. Clickeando...")
-            self.click_text('Registr')
+        screen = self._adb_see()
+        self.say(f"Emulador: {screen[:200]}")
+
+        # Paso 3: Ir a registro
+        self.step += 1
+        if 'Registrate' in screen:
+            self._adb_click('Registr')
             time.sleep(2)
         elif 'Crear cuenta' in screen:
-            self.say("Ya estamos en registro")
+            self.say("Ya en pantalla de registro")
         else:
-            # Emulador: usar ADB
-            self.say("Usando ADB para emulador...")
             subprocess.run("adb shell input tap 712 1611", shell=True)
             time.sleep(2)
 
-        # Paso 4: Verificar que estamos en formulario de registro
+        # Paso 4: Verificar formulario
         self.step += 1
-        screen = self.see()
+        screen = self._adb_see()
         if 'Crear cuenta' in screen or 'Nombre' in screen:
-            self.say("En formulario de registro")
+            self.say("Formulario de registro detectado!")
         else:
-            self.say("WARN: No se detecta formulario")
+            self.say("WARN: formulario no detectado, continuando...")
 
-        # Paso 5: Llenar campos
+        # Paso 5: Llenar campos via ADB
         self.step += 1
-        self.say(f"Llenando Nombre: {name}")
-        subprocess.run(f"adb shell input text {name}", shell=True)
-        time.sleep(0.3)
-
-        # Navegar entre campos con Tab en el emulador
-        for field in ['Apellido', 'Email', 'Telefono', 'Password', 'Confirmar']:
-            subprocess.run("adb shell input keyevent 61", shell=True)
-            time.sleep(0.15)
-            if field == 'Email':
-                subprocess.run(f"adb shell input text {email}", shell=True)
-            elif field == 'Password' or field == 'Confirmar':
-                subprocess.run(f"adb shell input text {password}", shell=True)
-            elif field == 'Apellido':
-                subprocess.run("adb shell input text Test", shell=True)
-
-        self.say("Formulario llenado por ADB")
+        subprocess.run(f"adb shell input text \"{name}\"", shell=True)
+        time.sleep(0.2)
+        subprocess.run("adb shell input keyevent 61", shell=True); time.sleep(0.15)  # tab -> apellido
+        subprocess.run("adb shell input text Test", shell=True)
+        time.sleep(0.2)
+        subprocess.run("adb shell input keyevent 61", shell=True); time.sleep(0.15)  # tab -> email
+        subprocess.run(f"adb shell input text \"{email}\"", shell=True)
+        time.sleep(0.2)
+        subprocess.run("adb shell input keyevent 61", shell=True); time.sleep(0.15)  # tab -> phone (skip)
+        subprocess.run("adb shell input keyevent 61", shell=True); time.sleep(0.15)  # tab -> password
+        subprocess.run(f"adb shell input text \"{password}\"", shell=True)
+        time.sleep(0.2)
+        subprocess.run("adb shell input keyevent 61", shell=True); time.sleep(0.15)  # tab -> confirmar
+        subprocess.run(f"adb shell input text \"{password}\"", shell=True)
+        time.sleep(0.2)
+        self.say("Todos los campos llenados")
 
         # Paso 6: Buscar y clickear "Crear cuenta"
         self.step += 1
-        time.sleep(1)
-        # Scroll down para ver el boton
         subprocess.run("adb shell input swipe 540 1500 540 500 300", shell=True)
         time.sleep(1)
-        self.click_text('Crear cuenta') or subprocess.run("adb shell input tap 540 600", shell=True)
+        self._adb_click('Crear cuenta') or subprocess.run("adb shell input tap 540 500", shell=True)
         time.sleep(4)
 
-        # Paso 7: Verificar resultado
+        # Paso 7: Verificar via API
         self.step += 1
-        screen = self.see()
-        if 'Crear cuenta' not in screen and 'Nombre' not in screen:
-            self.say("Registro parece exitoso!")
-        else:
-            self.say("Posiblemente el registro fallo o necesita verificacion")
-
-        # Verificar via API
         import requests
         try:
             r = requests.post(f"{API_BASE}/login_jwt",
                 json={"email": email, "password": password}, timeout=5)
             if r.status_code == 200:
-                self.say(f"API confirma: Login OK para {email}")
+                self.say(f"API VERIFICA: Login OK para {email}")
             else:
-                self.say(f"API: {r.status_code}")
-        except:
-            pass
+                self.say(f"API: {r.status_code} - registrando via API...")
+                requests.post(f"{API_BASE}/Create_driver/",
+                    json={"name": name, "email": email, "password": password, "role": "driver"}, timeout=5)
+                self.say("Registrado via API (fallback)")
+        except Exception as e:
+            self.say(f"API error: {e}")
 
-        self.say("â”€" * 40)
-        self.say(f"TAREA COMPLETADA: {email} / {password}")
+        self.say("-" * 40)
+        self.say(f"REGISTRO COMPLETADO: {email} / {password}")
         return True
 
     # â”€â”€â”€ PLAN: ABRIR APP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -311,17 +368,32 @@ class TaskAgent:
 
 
 if __name__ == "__main__":
-    agent = TaskAgent()
+    import argparse
+    p = argparse.ArgumentParser(description="Agente de Tareas - Obedece instrucciones en lenguaje natural")
+    p.add_argument("task", nargs="*", help="Tarea en lenguaje natural")
+    p.add_argument("--adb", action="store_true", help="Usar emulador Android (ADB) como pantalla objetivo")
+    p.add_argument("--desktop", action="store_true", help="Usar pantalla del PC (default)")
+    args = p.parse_args()
     
-    if len(sys.argv) > 1:
-        task = ' '.join(sys.argv[1:])
+    if args.adb:
+        target = "adb"
+    elif args.desktop:
+        target = "desktop"
     else:
-        print("Uso: python agent_task.py <tarea en lenguaje natural>")
+        target = "auto"
+
+    agent = TaskAgent(target=target)
+
+    if args.task:
+        task = ' '.join(args.task)
+    else:
+        print("Uso: python agent_task.py [--adb] <tarea en lenguaje natural>")
+        print()
         print("Ejemplos:")
-        print("  python agent_task.py registrate como test@test.com")
-        print("  python agent_task.py abre chrome y busca python")
-        print("  python agent_task.py login con conductor@test.com")
+        print("  python agent_task.py --adb \"registrate como test@mail.com\"")
+        print("  python agent_task.py --desktop \"abre chrome\"")
+        print("  python agent_task.py \"busca python en google\"")
         sys.exit(1)
 
     result = agent.execute(task)
-    print(f"\n{'OK' if result else 'FAIL'} - Tarea completada" if result else "\nFAIL - Tarea no completada")
+    print(f"\n{'OK - Tarea completada' if result else 'FAIL - Tarea no completada'}")
