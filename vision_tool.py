@@ -21,7 +21,7 @@ API = "http://192.168.4.23:8000"
 
 TASK_PLANS = {
     "register": {
-        "keywords": ["registr", "crear cuenta", "signup"],
+        "keywords": ["registr", "crear cuenta", "signup", "sign up", "nuevo usuario", "registra"],
         "steps": [
             {"icon": "👁", "desc": "Ver pantalla actual"},
             {"icon": "👆", "desc": "Click en 'Registrate'", "action": "click", "target": "Registr"},
@@ -35,33 +35,53 @@ TASK_PLANS = {
         ]
     },
     "login": {
-        "keywords": ["login", "iniciar sesion", "loguear"],
+        "keywords": ["login", "iniciar sesion", "loguear", "ingresar", "log in", "entrar"],
         "steps": [
             {"icon": "👁", "desc": "Ver pantalla actual"},
-            {"icon": "👆", "desc": "Click en 'Correo'", "action": "click", "target": "Correo"},
+            {"icon": "👆", "desc": "Click en campo email", "action": "click", "target": "Correo"},
             {"icon": "⌨", "desc": "Escribir email", "action": "type", "field": "email"},
-            {"icon": "👆", "desc": "Click en 'Contrase'", "action": "click", "target": "Contrase"},
+            {"icon": "👆", "desc": "Click en campo password", "action": "click", "target": "Contrase"},
             {"icon": "⌨", "desc": "Escribir password", "action": "type", "field": "password"},
             {"icon": "⌨", "desc": "Presionar Enter", "action": "key", "key": "enter"},
             {"icon": "👁", "desc": "Verificar login exitoso"},
         ]
     },
     "search": {
-        "keywords": ["buscar", "search", "google"],
+        "keywords": ["buscar", "busca", "search", "google", "googlear", "navegar", "web", "internet"],
         "steps": [
-            {"icon": "🔍", "desc": "Abrir Chrome (Win+R, chrome, Enter)"},
-            {"icon": "⌨", "desc": "Escribir query de busqueda"},
+            {"icon": "🔍", "desc": "Win+R para abrir ejecutar"},
+            {"icon": "⌨", "desc": "Escribir 'chrome'"},
+            {"icon": "⌨", "desc": "Presionar Enter para abrir Chrome"},
+            {"icon": "⌨", "desc": "Escribir la busqueda"},
             {"icon": "⌨", "desc": "Presionar Enter"},
         ]
     },
     "open_app": {
-        "keywords": ["abrir", "open"],
+        "keywords": ["abrir", "abre", "open", "ejecutar", "lanza", "inicia", "corre"],
         "steps": [
-            {"icon": "🔍", "desc": "Win+R"},
+            {"icon": "🔍", "desc": "Win+R para abrir ejecutar"},
             {"icon": "⌨", "desc": "Escribir nombre de la app"},
             {"icon": "⌨", "desc": "Presionar Enter"},
         ]
-    }
+    },
+    "type_text": {
+        "keywords": ["escribir", "escribe", "type", "escribe", "teclea", "texto", "redacta"],
+        "steps": [
+            {"icon": "⌨", "desc": "Escribir el texto solicitado", "action": "type_text"},
+        ]
+    },
+    "press_key": {
+        "keywords": ["presionar", "presiona", "pulsa", "aprieta", "tecla", "enter", "tab", "esc", "espacio"],
+        "steps": [
+            {"icon": "⌨", "desc": "Presionar la tecla solicitada", "action": "key"},
+        ]
+    },
+    "see": {
+        "keywords": ["ver", "ve", "mira", "lee", "que ves", "que hay", "que vez", "observa", "describe"],
+        "steps": [
+            {"icon": "👁", "desc": "Leer y mostrar lo que hay en pantalla", "action": "report_ocr"},
+        ]
+    },
 }
 
 class VisionToolPro:
@@ -305,39 +325,79 @@ EJEMPLOS:
         self.current_task = task.lower()
         self._log(f"TAREA: {task}")
 
-        # Detectar tipo
-        plan_type = None
-        for ptype, info in TASK_PLANS.items():
-            for kw in info["keywords"]:
-                if kw in self.current_task:
-                    plan_type = ptype
-                    break
-
-        if not plan_type:
-            self._log("No reconozco la tarea. Intenta:")
-            self._log("  'registra a user@test.com'")
-            self._log("  'login con conductor@test.com'")
-            self.plan_box.delete("1.0", "end")
-            self.plan_box.insert("1.0", "Tarea no reconocida")
-            return
-
-        # Extraer params
+        # Extraer params basicos primero
         email_match = re.search(r'[\w.]+@[\w.]+', task)
         if email_match:
             self.task_params['email'] = email_match.group(0)
-
         pass_match = re.search(r'pass(?:word)?[:\s]*(\S+)', task, re.IGNORECASE)
         if pass_match:
             self.task_params['password'] = pass_match.group(1)
-
         name_match = re.search(r'(?:nombre|name|como)[:\s]*(\w+)', task, re.IGNORECASE)
         if name_match:
             self.task_params['name'] = name_match.group(1)
 
-        # Generar plan
-        steps = TASK_PLANS[plan_type]["steps"]
+        # Extraer texto para type_text
+        text_match = re.search(r'(?:escribir?|escribe?|type|texto)[:\s]+(.+)', task, re.IGNORECASE)
+        if text_match:
+            self.task_params['text'] = text_match.group(1)
+
+        # Extraer query de busqueda
+        for prefix in ['busca', 'buscar', 'search', 'google', 'busqueda']:
+            idx = task.lower().find(prefix)
+            if idx >= 0:
+                remainder = task[idx + len(prefix):].strip()
+                if remainder:
+                    self.task_params['query'] = remainder
+                    break
+
+        # Detectar tipo de plan (orden de prioridad)
+        plan_type = None
+        priority_order = ["see", "search", "register", "login", "open_app", "type_text", "press_key"]
+
+        for ptype in priority_order:
+            info = TASK_PLANS.get(ptype)
+            if not info: continue
+            for kw in info["keywords"]:
+                if kw in self.current_task:
+                    plan_type = ptype
+                    break
+            if plan_type:
+                break
+
+        if not plan_type:
+            self._log("No reconozco la tarea. Intenta:")
+            self._log("  'que ves' / 'dime que ves'")
+            self._log("  'registra a user@test.com'")
+            self._log("  'login con conductor@test.com'")
+            self._log("  'abre chrome'")
+            self._log("  'busca python en google'")
+            self._log("  'escribe hola mundo'")
+            self._log("  'presiona enter'")
+            self.plan_box.delete("1.0", "end")
+            self.plan_box.insert("1.0", "Tarea no reconocida")
+            return
+
+        # Generar plan con detalles personalizados
+        steps = [s.copy() for s in TASK_PLANS[plan_type]["steps"]]
         self.current_plan = {"type": plan_type, "steps": steps, "current": 0}
         self.plan_step = 0
+
+        # Personalizar pasos con params extraidos
+        if plan_type == "search":
+            query = self.task_params.get("query", task)
+            for s in steps:
+                if "escribir" in s.get("desc", "").lower() or "busqueda" in s.get("desc", "").lower():
+                    s["desc"] = f"Escribir '{query[:40]}'"
+                    s["action"] = "type_query"
+                if "nombre de la app" in s.get("desc", ""):
+                    s["desc"] = "Escribir 'chrome'"
+        elif plan_type == "open_app":
+            for s in steps:
+                if "nombre de la app" in s.get("desc", ""):
+                    app = task.lower()
+                    for w in ["abrir", "abre", "open", "lanza", "inicia", "ejecutar"]:
+                        app = app.replace(w, "").strip()
+                    s["desc"] = f"Escribir '{app[:30]}'"
 
         self.plan_box.delete("1.0", "end")
         plan_text = f"PLAN: {plan_type.upper()}\n" + "-" * 30 + "\n"
@@ -406,6 +466,18 @@ EJEMPLOS:
         elif action == "key":
             key = step.get("key", "enter")
             pyautogui.press(key)
+            ok = True
+        elif action == "report_ocr":
+            self._log("=== LO QUE VEO EN PANTALLA ===")
+            self._log(self.last_ocr[:500] or "(OCR procesando...)")
+            ok = True
+        elif action == "type_text":
+            text = self.task_params.get("text", self.current_task or "")
+            self._hid_type(text)
+            ok = True
+        elif action == "type_query":
+            query = self.task_params.get("query", "python")
+            self._hid_type(query)
             ok = True
         else:
             ok = True  # pasos de observacion sin accion
