@@ -17,16 +17,38 @@ class AgentVision:
         self.step = 0
         self.run_id = str(int(time.time()))
         os.makedirs(screenshots_dir, exist_ok=True)
+        # Configurar Tesseract
+        import pytesseract
+        possible_paths = [
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+        ]
+        for p in possible_paths:
+            if os.path.exists(p):
+                pytesseract.pytesseract.tesseract_cmd = p
+                break
 
     def log(self, msg):
         print(f"[{self.name}] {msg}")
 
     def screenshot(self):
-        raw = subprocess.run("adb exec-out screencap -p", shell=True,
-                           capture_output=True).stdout
-        self.last_screen = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
+        """Captura pantalla del emulador via ADB. Archivo unico por agente."""
+        import tempfile
+        tmp = f"{tempfile.gettempdir()}/agent_scr_{self.name}.png"
+        subprocess.run(f"adb exec-out screencap -p > \"{tmp}\"", shell=True, timeout=10)
+        time.sleep(0.3)
+        try:
+            self.last_screen = cv2.imread(tmp)
+            if self.last_screen is None:
+                time.sleep(0.5)
+                self.last_screen = cv2.imread(tmp)
+        except:
+            time.sleep(1)
+            self.last_screen = cv2.imread(tmp)
+        if self.last_screen is None:
+            self.log("ERROR: No se pudo leer el screenshot")
+            return None
         self.step += 1
-        # Save debug screenshot
         path = f"{self.screenshots_dir}/{self.name}_{self.run_id}_{self.step}.png"
         cv2.imwrite(path, self.last_screen)
         return self.last_screen
@@ -97,26 +119,48 @@ class AgentVision:
         time.sleep(0.3)
 
     def click_text(self, text):
-        """Busca texto y hace click"""
+        """Busca texto con OCR y hace click"""
         self.screenshot()
         pos = self.find_text(text)
         if pos:
             self.click(pos)
-            time.sleep(0.5)
+            time.sleep(1.5)
             return True
-        self.log(f"No encontrado: '{text}'")
+        self.log(f"No encontrado exacto: '{text}'. Buscando parcial...")
         return False
 
     def click_contains(self, substring):
-        """Busca texto parcial y hace click en la primera coincidencia"""
+        """Busca texto parcial con OCR y hace click en la primera coincidencia"""
         self.screenshot()
         results = self.find_text_contains(substring)
         if results:
             x, y, word = results[0]
             self.log(f"Click en '{word}' ({x},{y})")
-            self.click(x, y)
-            time.sleep(0.5)
+            subprocess.run(f"adb shell input tap {x} {y}", shell=True)
+            time.sleep(1.5)
             return True
+        self.log(f"Texto no encontrado: '{substring}'")
+        return False
+
+    def verify_text_appears(self, text, timeout=30):
+        """Verifica que un texto APARECE en pantalla (retorna True/False)"""
+        for _ in range(timeout * 2):
+            self.screenshot()
+            if self.find_text(text):
+                self.log(f"[VERIFY] '{text}' detectado!")
+                return True
+            time.sleep(0.5)
+        self.log(f"[VERIFY FAIL] '{text}' NO aparecio")
+        return False
+
+    def verify_contains(self, substring, timeout=15):
+        """Verifica que un substring aparece"""
+        for _ in range(timeout * 2):
+            self.screenshot()
+            if self.find_text_contains(substring):
+                self.log(f"[VERIFY] '{substring}' detectado!")
+                return True
+            time.sleep(0.5)
         return False
 
     def type_text(self, text):
@@ -183,6 +227,9 @@ class AgentVision:
         time.sleep(0.5)
 
     def save_screenshot(self, name):
+        if self.last_screen is None:
+            self.log(f"WARN: No hay screenshot para guardar {name}")
+            return
         path = f"{self.screenshots_dir}/{self.name}_{name}.png"
         cv2.imwrite(path, self.last_screen)
         return path

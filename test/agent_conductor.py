@@ -1,7 +1,7 @@
-"""Agente Conductor - Vision Artificial
-Simula un conductor usando la app CommuteShare en Android."""
+"""Agente Conductor - Vision Artificial con OCR
+Usa Tesseract para detectar texto y hacer clicks precisos."""
 
-import time
+import time, json, os
 from agent_vision import AgentVision
 
 class ConductorAgent:
@@ -14,135 +14,126 @@ class ConductorAgent:
             return self._flow()
         except Exception as e:
             self.v.log(f"ERROR: {e}")
-            self.v.screenshot()
             self.v.save_screenshot("error")
-            self.ok = False
             return False
 
     def _flow(self):
         v = self.v
-
-        # 1. Tomar screenshot inicial
         v.screenshot()
-        v.log("Iniciando flujo Conductor...")
+        v.log("=== INICIO CONDUCTOR ===")
 
-        # 2. Leer texto de la pantalla para saber donde estamos
+        # 1. Verificar pantalla actual
         text = v.read_all_text()
-        v.log(f"Texto detectado: {text[:200]}")
+        v.log(f"Pantalla: {text[:200]}")
 
-        # 3. Intentar login si estamos en pantalla de login
-        if "CommuteShare" in text or "Iniciar" in text or "sesion" in text.lower() or "iniciar" in text.lower():
-            v.log("Detectada pantalla de login")
+        # 2. Si estamos en registro, volver a login
+        if "Crear cuenta" in text:
+            v.log("En pantalla de registro. Volviendo a login...")
+            v.click_contains("inicia sesion") or v.click_contains("Inicia")
+            time.sleep(2)
 
-            # Si hay boton "Registrate", ir a login
-            if "Registrate" in text or "REGISTRATE" in text.upper():
-                v.log("En pantalla de registro, cambiando a login...")
-                v.click_contains("Iniciar")
-                time.sleep(2)
-                v.screenshot()
+        # 3. Login: email
+        v.screenshot()
+        v.log("Login: email")
+        v.click_contains("Correo") or v.click_contains("correo")
+        time.sleep(0.3)
+        v.type_text("conductor@test.com")
 
-            # Tocar campo email (centro-izquierda de la pantalla)
-            v.click(540, 800)
-            time.sleep(0.5)
-            v.type_text("conductor@test.com")
-            time.sleep(0.5)
+        # 4. Login: password
+        v.click_contains("Contrase") or v.click_contains("contrase")
+        time.sleep(0.3)
+        v.type_text("123456")
 
-            # Tocar campo password
-            v.click(540, 960)
-            time.sleep(0.5)
-            v.type_text("123456")
-            time.sleep(0.5)
+        # 5. Login: buscar y click en boton "Iniciar sesion"
+        v.screenshot()
+        v.log("Buscando boton de login...")
+        clicked = v.click_contains("inic") or v.click_contains("Inic") or v.click_contains("sesion")
+        if not clicked:
+            v.log("Boton no encontrado con OCR. Usando posicion fija (540,1250)...")
+            v.click(540, 1250)
+        time.sleep(5)
 
-            # Tocar boton login
-            v.click(540, 1150)
-            v.log("Login enviado")
-            time.sleep(5)
-            v.screenshot()
-            v.save_screenshot("post_login")
-
-        # 4. Leer pantalla post-login
+        # 6. Verificar que el login funciono
         v.screenshot()
         text = v.read_all_text()
-        v.log(f"Post-login: {text[:200]}")
+        v.log(f"Post-login: {text[:250]}")
 
-        # 5. Si texto tiene "Inicio" u "Home", login OK
-        if "Inicio" in text or "Home" in text or "Viaje" in text or "viaje" in text:
-            v.log("Login exitoso - en pantalla principal")
+        if "Inicio" in text or "Home" in text or "viaje" in text.lower() or "Viaje" in text:
+            v.log("Login EXITOSO - en pantalla principal!")
         else:
-            v.log("WARN: No se detecto pantalla principal. Intentando continuar...")
+            v.log("WARN: No se detecto pantalla principal. Texto: " + text[:150])
 
-        # 6. Tocar para crear viaje - buscar boton
-        v.click_contains("Crear") or v.click_contains("Publicar") or v.click(540, 1700)
+        # 7. Crear viaje - buscar boton "Crear" o "Publicar"
+        v.screenshot()
+        v.log("Buscando opcion para crear viaje...")
+        v.click_contains("Crear") or v.click_contains("Publicar") or v.click_contains("viaje") or v.click_contains("Viaje")
         time.sleep(3)
-        v.screenshot()
-        v.save_screenshot("crear_viaje")
 
-        # 7. Llenar formulario: origen
+        # 8. Llenar formulario de viaje con OCR-detected positions
+        v.screenshot()
         text = v.read_all_text()
-        v.log(f"Form: {text[:200]}")
+        v.log(f"Formulario: {text[:300]}")
 
-        # Campos (estimados en formulario Flutter)
-        v.click(540, 600)  # recogida
-        time.sleep(0.5)
+        # Origen
+        v.log("Llenando recogida...")
+        v.click_contains("recogida") or v.click_contains("Origen") or v.click(540, 600)
+        time.sleep(0.3)
         v.type_text("Centro")
-        time.sleep(0.3)
 
-        v.click(540, 740)  # destino
-        time.sleep(0.5)
+        # Destino
+        v.click_contains("destino") or v.click_contains("Destino") or v.click(540, 740)
+        time.sleep(0.3)
         v.type_text("Aeropuerto")
-        time.sleep(0.3)
 
-        v.click(540, 880)  # precio
-        time.sleep(0.5)
+        # Precio
+        v.click_contains("precio") or v.click_contains("Precio") or v.click(540, 880)
+        time.sleep(0.3)
         v.type_text("50")
-        time.sleep(0.3)
 
-        v.click(540, 1020)  # asientos
-        time.sleep(0.5)
+        # Asientos
+        v.click_contains("trips") or v.click_contains("Asientos") or v.click(540, 1020)
+        time.sleep(0.3)
         v.type_text("3")
-        time.sleep(0.3)
 
-        v.screenshot()
         v.save_screenshot("form_llenado")
 
-        # 8. Publicar
+        # 9. Publicar
         v.log("Publicando viaje...")
+        v.screenshot()
         v.scroll_down(400)
         time.sleep(1)
-        v.click_contains("Publicar") or v.click_contains("Crear") or v.click(540, 1600)
+        v.click_contains("Publicar") or v.click_contains("Guardar") or v.click_contains("Crear") or v.click(540, 1600)
         time.sleep(4)
+
         v.screenshot()
         v.save_screenshot("viaje_publicado")
         v.log("Viaje publicado!")
 
-        # 9. Escribir en archivo de coordinacion que el viaje está creado
-        import json
+        # 10. Coordinacion
         try:
             with open("test/coordination.json", "w") as f:
                 json.dump({"viaje_creado": True, "step": "viaje_creado"}, f)
-            v.log("Coordinacion: viaje_creado=true")
         except:
             pass
 
-        # 10. Esperar solicitud entrante (polling visual)
+        # 11. Esperar solicitud del pasajero
         v.log("Esperando solicitud del pasajero...")
         for i in range(40):
             time.sleep(3)
             v.screenshot()
             text = v.read_all_text()
-            if "Solicitud" in text or "solicitud" in text or "pendiente" in text.lower():
-                v.log(f"Solicitud detectada! Texto: {text[:100]}")
+            if "Solicitud" in text or "solicitud" in text or "pendiente" in text.lower() or "request" in text.lower():
+                v.log(f"Solicitud detectada!")
                 break
             if i % 5 == 0:
                 v.log(f"  Esperando... ({i*3}s)")
 
-        # 11. Aceptar
+        # 12. Aceptar
         v.log("Aceptando solicitud...")
         v.click_contains("Aceptar") or v.click_contains("ACEPTAR") or v.click(540, 1400)
         time.sleep(3)
         v.screenshot()
         v.save_screenshot("aceptado")
-        v.log("Solicitud ACEPTADA!")
 
         try:
             with open("test/coordination.json", "w") as f:
@@ -150,10 +141,10 @@ class ConductorAgent:
         except:
             pass
 
-        v.log("Conductor: ciclo completo!")
+        v.log("=== CONDUCTOR COMPLETO ===")
         return True
 
 if __name__ == "__main__":
-    agent = ConductorAgent()
-    result = agent.run()
+    c = ConductorAgent()
+    result = c.run()
     print(f"\n[CONDUCTOR] {'PASS' if result else 'FAIL'}")
