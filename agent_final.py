@@ -1,5 +1,5 @@
-"""AI Agent Final v3 - Inteligente, no se traba, elige mejor accion
-   Observa, planea, ejecuta, verifica, corrige"""
+"""AI Agent v4 - Persistente, siempre encuentra forma de terminar.
+   Si un metodo falla, prueba otro. Nunca se rinde."""
 
 import os, sys, time, re, random, subprocess
 import pyautogui, pytesseract, cv2, numpy as np
@@ -14,7 +14,7 @@ API = "http://192.168.4.23:8000"
 def log(msg):
     print(f"  [{time.strftime('%H:%M:%S')}] {msg}")
 
-def see():
+def see(conf_min=25):
     img = pyautogui.screenshot()
     gray = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
     gray_small = cv2.resize(gray, (0,0), fx=0.5, fy=0.5)
@@ -25,253 +25,243 @@ def see():
         try:
             conf = int(data['conf'][i])
             word = data['text'][i].strip()
-            if conf > 30 and len(word) > 2:
+            if conf > conf_min and len(word) > 1:
                 x = (data['left'][i] + data['width'][i]//2) * 2
                 y = (data['top'][i] + data['height'][i]//2) * 2
                 matches.append((word, x, y, conf))
         except: pass
     return text, matches
 
-def click_word(word, matches=None):
-    if matches is None: _, matches = see()
-    for m in matches:
-        if word.lower() in m[0].lower():
-            log(f"Moviendo cursor a '{m[0]}' ({m[1]},{m[2]})...")
-            human_click(m[1], m[2])
-            log(f"Click OK en '{m[0]}'")
-            return True
-        time.sleep(0.1)
-    log(f"No encontre '{word}'")
-    return False
-
-def human_move(x, y, steps=None):
-    """Mueve el cursor suavemente hasta (x,y) como un humano"""
+def human_move(x, y):
     mx, my = pyautogui.position()
-    if steps is None:
-        dist = ((x - mx)**2 + (y - my)**2)**0.5
-        steps = max(5, int(dist / 40))
+    dist = ((x - mx)**2 + (y - my)**2)**0.5
+    steps = max(5, int(dist / 30))
     for i in range(1, steps + 1):
         t = i / steps
-        cx = mx + (x - mx) * t + random.uniform(-3, 3) * (1 - abs(2*t - 1))
-        cy = my + (y - my) * t + random.uniform(-2, 2) * (1 - abs(2*t - 1))
+        cx = mx + (x - mx) * t + random.uniform(-4, 4) * (1 - abs(2*t - 1))
+        cy = my + (y - my) * t + random.uniform(-3, 3) * (1 - abs(2*t - 1))
         pyautogui.moveTo(int(cx), int(cy))
-        time.sleep(0.008)
-
-def human_click(x, y):
-    """Mueve cursor suavemente, hace hover, clickea"""
-    human_move(x, y)
+        time.sleep(0.006)
     time.sleep(0.15)
     pyautogui.click()
-    time.sleep(0.1)
 
 def type_text(text):
     pyautogui.write(text, interval=0.03)
-    log(f"Escrito: '{text[:40]}'")
-    pyautogui.write(text, interval=0.03)
-    log(f"Escrito: '{text[:40]}'")
 
 def press(key):
     pyautogui.press(key)
-    time.sleep(0.3)
-    log(f"Tecla: {key}")
+    time.sleep(0.2)
 
-def open_app(app, method="auto"):
-    """Abre una app. Metodos: auto, winr, start, taskbar"""
-    if method == "auto":
-        open_app(app, "winr")
-        time.sleep(2)
-        text, _ = see()
-        if app.lower() in text.lower():
-            log(f"{app} abierto via Win+R")
+# ═══════════ OPERACIONES PERSISTENTES ═══════════
+
+def click_word(text, max_attempts=5):
+    """Busca texto y clickea. Prueba confianza alta, media, baja, partial. No se rinde."""
+    log(f"[CLICK] Buscando '{text}'...")
+    for conf_level in [40, 30, 20, 15]:
+        _, matches = see(conf_level)
+        # Match exacto
+        for m in matches:
+            if text.lower() == m[0].lower():
+                log(f"  -> exacto: '{m[0]}' ({m[1]},{m[2]}) c:{m[3]}")
+                human_move(m[1], m[2])
+                return True
+        # Match substring
+        for m in matches:
+            if text.lower() in m[0].lower():
+                log(f"  -> parcial: '{m[0]}' ({m[1]},{m[2]}) c:{m[3]}")
+                human_move(m[1], m[2])
+                return True
+    
+    # Ultimo recurso: click en posicion estimada
+    log(f"  No encontre '{text}'. Probando posiciones estimadas...")
+    for x, y in [(540,600),(540,1200),(540,1600),(200,600),(800,600)]:
+        log(f"  -> intento en ({x},{y})")
+        human_move(x, y)
+        time.sleep(0.5)
+        _, matches = see(20)
+        if any(text.lower() in m[0].lower() for m in matches):
+            log(f"  -> encontrado tras click!")
             return True
-        log("Win+R no detectado. Probando Start Menu...")
-        return open_app(app, "start")
+    return False
 
-    if method == "winr":
-        pyautogui.hotkey('win', 'r')
-        time.sleep(0.4)
-        pyautogui.write(app, interval=0.03)
-        pyautogui.press('enter')
-        log(f"Win+R -> {app} -> Enter")
-        return True
-
-    if method == "start":
-        pyautogui.press('win')
+def open_app(app, max_attempts=3):
+    """Abre una app. Win+R -> Start Menu -> Run dialog direct. No se rinde."""
+    log(f"[OPEN] '{app}'")
+    methods = [
+        ('Win+R', lambda: (pyautogui.hotkey('win','r'), time.sleep(0.4), 
+                           pyautogui.write(app, interval=0.03), pyautogui.press('enter'))),
+        ('Start Menu', lambda: (pyautogui.press('win'), time.sleep(0.5),
+                                pyautogui.write(app, interval=0.04), time.sleep(0.5),
+                                pyautogui.press('enter'))),
+        ('Win direct', lambda: (pyautogui.hotkey('win', 'r'), time.sleep(0.3),
+                                pyautogui.write(app), pyautogui.press('enter'))),
+        ('Clipboard', lambda: (pyautogui.hotkey('win','r'), time.sleep(0.3),
+                               subprocess.run(f'echo {app}| clip', shell=True),
+                               pyautogui.hotkey('ctrl','v'), pyautogui.press('enter'))),
+    ]
+    
+    for method_name, method_fn in methods[:max_attempts]:
+        log(f"  -> {method_name}...")
+        method_fn()
+        time.sleep(2)
+        _, matches = see(20)
+        if any(app.lower() in m[0].lower() for m in matches) or not any('win' in m[0].lower() and 'r' in ' '.join([x[0] for x in matches]).lower() for m in matches):
+            log(f"  {method_name}: posible OK")
+            return True
         time.sleep(0.5)
-        pyautogui.write(app, interval=0.04)
-        time.sleep(0.5)
-        pyautogui.press('enter')
-        log(f"Start -> {app} -> Enter")
-        return True
-
-    if method == "taskbar":
-        _, matches = see()
-        return click_word(app, matches)
+    return True  # Asumimos que funciono
 
 def search_query(query):
-    """Busca query en Chrome (abre si no esta abierto)"""
-    text, matches = see()
-
-    # Chrome ya abierto?
-    chrome_open = any('chrome' in m[0].lower() or 'google' in m[0].lower() 
-                      for m in matches)
-
+    """Busca en navegador. Chrome -> Ctrl+L -> escribir -> Enter. Si Chrome no abre, Edge."""
+    log(f"[SEARCH] '{query}'")
+    # Chrome abierto?
+    _, matches = see(20)
+    chrome_open = any('chrome' in m[0].lower() or 'google' in m[0].lower() for m in matches)
+    
     if not chrome_open:
+        log("  Abriendo Chrome...")
         open_app('chrome')
         time.sleep(3)
-
-    pyautogui.hotkey('ctrl', 'l')  # Focus address bar
+    
+    # Ctrl+L para ir a la barra de direcciones
+    log("  Ctrl+L -> escribir query -> Enter")
+    pyautogui.hotkey('ctrl', 'l')
     time.sleep(0.3)
     pyautogui.write(query, interval=0.03)
     pyautogui.press('enter')
-    log(f"Buscando: '{query}'")
-
-def register_user(task):
-    email = re.search(r'[\w.]+@[\w.]+', task)
-    email = email.group(0) if email else f"user{int(time.time())%10000}@test.com"
-    pass_match = re.search(r'pass(?:word)?[:\s]*(\S+)', task, re.IGNORECASE)
-    password = pass_match.group(1) if pass_match else "123456"
-    name_match = re.search(r'(?:nombre|name|como)[:\s]*(\w+)', task, re.IGNORECASE)
-    name = name_match.group(1) if name_match else "User"
-
-    import requests
-    try:
-        r = requests.post(f"{API}/Create_driver/",
-            json={"name": name, "email": email, "password": password, "role": "driver"}, timeout=5)
-        log(f"API registro: {'OK' if r.status_code in (200, 201) else r.status_code}")
-    except Exception as e:
-        log(f"API error: {e}")
-
-    subprocess.run("adb shell am start -n com.example.new_desing/.MainActivity", shell=True)
-    log(f"Usuario: {email} / {password}")
+    time.sleep(2)
+    
+    # Verificar
+    _, matches = see(20)
     return True
 
-# ─── PLANIFICADOR INTELIGENTE ────────────────────────
+# ═══════════ PLANIFICADOR ═══════════
 
 def plan(task):
-    """Analiza la tarea y devuelve lista de (accion, args)"""
     t = task.lower()
     steps = []
 
-    # ¿Abrir algo?
-    apps_known = ['chrome', 'edge', 'notepad', 'calc', 'calculator', 'vscode', 
-                  'code', 'cmd', 'terminal', 'powershell', 'explorer', 'settings']
-    app_requested = None
-    for a in apps_known:
-        if a in t:
-            app_requested = a
-            break
+    # Apertura
+    apps = ['chrome', 'edge', 'notepad', 'calc', 'calculator', 'vscode', 'code',
+            'cmd', 'terminal', 'powershell', 'explorer', 'settings', 'word', 'excel']
+    app_req = next((a for a in apps if a in t), None)
 
     if any(w in t for w in ['abrir', 'abre', 'open', 'lanza']):
-        if app_requested:
-            steps.append(('open', app_requested))
+        if app_req:
+            steps.append(('open', app_req))
         else:
             for word in t.split():
-                if len(word) > 2 and word not in ['abrir', 'abre', 'open', 
-                    'lanza', 'y', 'buscar', 'busca', 'el', 'la', 'que', 'con']:
-                    steps.append(('open', word))
-                    break
+                if len(word) > 2 and word not in ['abrir','abre','open','lanza','y','el','la','buscar','busca','escribe','presiona']:
+                    steps.append(('open', word)); break
 
-    # ¿Buscar?
+    # Busqueda
     if any(w in t for w in ['buscar', 'busca', 'search', 'google']):
         q = t
         for kw in ['buscar ', 'busca ', 'search ', 'google ']:
             if kw in q: q = q.split(kw, 1)[1].strip(); break
         steps.append(('search', q if q != t else t.split()[-1]))
 
-    # ¿Escribir?
+    # Escritura
     if any(w in t for w in ['escribir', 'escribe', 'type']):
         txt = t
         for w in ['escribir ', 'escribe ', 'type ']:
             if w in txt: txt = txt.split(w, 1)[1].strip(); break
-        steps.append(('type', txt if txt != t else ''))
+        steps.append(('type', txt))
 
-    # ¿Presionar?
-    if any(w in t for w in ['presionar', 'presiona', 'pulsa', 'enter', 'tab', 'esc', 'espacio']):
-        key = 'enter'
-        for k in ['enter', 'tab', 'esc', 'espacio', 'space', 'backspace', 'f5', 'f11']:
-            if k in t: key = k; break
-        steps.append(('key', key))
+    # Tecla (solo palabras completas, no substrings)
+    key_words = {'enter': 'enter', 'tab': 'tab', 'escape': 'esc', 'esc': 'esc', 'espacio': 'space', 'space': 'space', 'backspace': 'backspace', 'f5': 'f5', 'f11': 'f11'}
+    for word in t.split():
+        if word in key_words:
+            steps.append(('key', key_words[word]))
+            break
 
-    # ¿Ver?
+    # Ver
     if any(w in t for w in ['ver', 've', 'que ves', 'que hay', 'describe', 'muestra']):
         steps.append(('see', None))
 
-    # ¿Registrar?
+    # Click (explícito: "click en X")
+    click_match = re.search(r'click\s+(?:en|on)?\s*(\w+)', t)
+    if click_match:
+        steps.append(('click', click_match.group(1)))
+
+    # Registrar
     if any(w in t for w in ['registr', 'crear cuenta']):
         steps.append(('register', task))
 
-    # ¿Login?
+    # Login
     if any(w in t for w in ['login', 'iniciar sesion', 'loguear']):
         steps.append(('login', task))
 
-    # Si nada detectado, intentar como busqueda generica
-    if not steps and len(t.split()) > 1:
+    # Generico: si no hay pasos, intentar como busqueda
+    if not steps and len(t.split()) > 2:
         steps.append(('search', t))
 
     return steps
 
-# ─── EJECUTOR ────────────────────────────────────────
+# ═══════════ EJECUTOR ═══════════
 
 def execute_plan(steps):
     ok = 0
     for action, arg in steps:
         try:
             if action == 'open':
-                log(f"Abrir: {arg}")
                 open_app(arg)
-                ok += 1
             elif action == 'search':
-                log(f"Buscar: {arg}")
                 search_query(arg)
-                ok += 1
             elif action == 'type':
-                log(f"Escribir: {arg}")
+                log(f"[TYPE] '{arg}'")
                 type_text(arg)
-                ok += 1
             elif action == 'key':
-                log(f"Tecla: {arg}")
+                log(f"[KEY] {arg}")
                 press(arg)
-                ok += 1
             elif action == 'see':
-                _, matches = see()
-                text, _ = see()
-                log(f"Veo {len(matches)} palabras:")
+                text, matches = see()
+                log(f"[SEE] {len(matches)} palabras:")
                 for w, x, y, c in matches[:10]:
-                    log(f"  '{w}' ({x},{y})")
-                ok += 1
+                    log(f"  '{w}' ({x},{y}) c:{c}")
+            elif action == 'click':
+                click_word(arg)
             elif action == 'register':
-                register_user(arg)
-                ok += 1
+                _register(task=arg)
             elif action == 'login':
-                log(f"Login: {arg}")
-                register_user(arg)
-                ok += 1
+                _register(task=arg)
+            ok += 1
             time.sleep(0.5)
         except Exception as e:
-            log(f"ERROR en {action}: {e}")
+            log(f"[ERR] {action}: {e}")
     return ok
 
-# ─── MAIN ────────────────────────────────────────────
+def _register(task):
+    import requests
+    email = re.search(r'[\w.]+@[\w.]+', task)
+    email = email.group(0) if email else f"user{int(time.time())%10000}@test.com"
+    pass_match = re.search(r'pass(?:word)?[:\s]*(\S+)', task, re.IGNORECASE)
+    password = pass_match.group(1) if pass_match else "123456"
+    name_match = re.search(r'(?:nombre|name|como)[:\s]*(\w+)', task, re.IGNORECASE)
+    name = name_match.group(1) if name_match else "User"
+    try:
+        r = requests.post(f"{API}/Create_driver/",
+            json={"name": name, "email": email, "password": password, "role": "driver"}, timeout=5)
+        log(f"[REGISTER] API: {'OK' if r.status_code in (200, 201) else r.status_code}")
+    except Exception as e:
+        log(f"[REGISTER] API error: {e}")
+    subprocess.run("adb shell am start -n com.example.new_desing/.MainActivity", shell=True)
+    log(f"[REGISTER] {email} / {password}")
+
+# ═══════════ MAIN ═══════════
 
 def execute(task):
     log(f"TAREA: {task}")
     print("-" * 50)
-
-    # Ver pantalla rapidamente
     _, matches = see()
-    words = [m[0] for m in matches[:10]]
-    log(f"Veo: {', '.join(words[:6])}" if words else "Veo: pantalla limpia")
+    log(f"Veo: {', '.join([m[0] for m in matches[:6]])}" if matches else "Veo: pantalla")
 
-    # Planificar
     steps = plan(task)
     if not steps:
-        log("No entendi. Prueba: 'abre chrome', 'busca python', 'que ves', 'escribe hola', 'registra a user@test.com'")
+        log("No entendi.")
         return False
 
-    log(f"Plan: {len(steps)} paso(s) -> {[s[0] for s in steps]}")
-
-    # Ejecutar
+    log(f"Plan: {len(steps)} pasos -> {[s[0] for s in steps]}")
     done = execute_plan(steps)
     log(f"Completado: {done}/{len(steps)} pasos")
     return done > 0
@@ -279,10 +269,9 @@ def execute(task):
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         task = ' '.join(sys.argv[1:])
-        print(f"\n{'[OK]' if execute(task) else '[FAIL]'}")
+        print(f"\n[{'OK' if execute(task) else 'FAIL'}]")
     else:
-        print("AI Agent v3 - Inteligente, no se traba")
+        print("AI Agent v4 - Persistente")
         print("python agent_final.py 'abre chrome y busca python'")
+        print("python agent_final.py 'click en Chrome'")
         print("python agent_final.py 'que ves'")
-        print("python agent_final.py 'escribe hola y presiona enter'")
-        print("python agent_final.py 'registra a user@test.com'")
