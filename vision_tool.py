@@ -365,16 +365,9 @@ EJEMPLOS:
                 break
 
         if not plan_type:
-            self._log("No reconozco la tarea. Intenta:")
-            self._log("  'que ves' / 'dime que ves'")
-            self._log("  'registra a user@test.com'")
-            self._log("  'login con conductor@test.com'")
-            self._log("  'abre chrome'")
-            self._log("  'busca python en google'")
-            self._log("  'escribe hola mundo'")
-            self._log("  'presiona enter'")
-            self.plan_box.delete("1.0", "end")
-            self.plan_box.insert("1.0", "Tarea no reconocida")
+            # Fallback: preguntar a la IA
+            self._log("Consultando a la IA...")
+            self._ask_ai(task)
             return
 
         # Generar plan con detalles personalizados
@@ -425,6 +418,76 @@ EJEMPLOS:
                 time.sleep(2)
 
         threading.Thread(target=exec_loop, daemon=True).start()
+
+    def _ask_ai(self, task):
+        """Envia la tarea a la IA via archivo JSON"""
+        import json
+        ai_file = "test/ai_task.json"
+        ai_result = "test/ai_result.json"
+
+        # Escribir tarea para la IA
+        with open(ai_file, "w", encoding="utf-8") as f:
+            json.dump({"task": task, "timestamp": time.time(), "ocr": self.last_ocr[:500]}, f)
+
+        self.plan_box.delete("1.0", "end")
+        self.plan_box.insert("1.0", f"Preguntando a la IA...\n\n\"{task}\"\n\nEspera unos segundos...")
+
+        # Polling por respuesta de la IA
+        def poll():
+            for _ in range(30):  # max 30s
+                time.sleep(1)
+                try:
+                    with open(ai_result, "r", encoding="utf-8") as f:
+                        result = json.load(f)
+                    # Respuesta recibida!
+                    self.win.after(0, lambda r=result: self._on_ai_response(r))
+                    return
+                except:
+                    pass
+            self.win.after(0, lambda: self._log("IA no respondio en 30s"))
+            self.win.after(0, lambda: self.plan_box.insert("end", "\n\nIA no respondio. Intenta de nuevo."))
+
+        threading.Thread(target=poll, daemon=True).start()
+
+    def _on_ai_response(self, result):
+        """Procesa la respuesta de la IA"""
+        self._log(f"IA responde: {result.get('message', '')}")
+        self.plan_box.delete("1.0", "end")
+        self.plan_box.insert("1.0", f"IA: {result.get('message', 'OK')}")
+
+        # Si la IA pide ejecutar comandos
+        if result.get("commands"):
+            self._log("Ejecutando comandos de la IA...")
+            for cmd in result["commands"]:
+                time.sleep(0.3)
+                self._execute_ai_cmd(cmd)
+
+    def _execute_ai_cmd(self, cmd):
+        """Ejecuta un comando dictado por la IA"""
+        action = cmd.get("action", "")
+        self._log(f"  -> {action}: {cmd.get('target', cmd.get('text', ''))}")
+
+        if action == "click":
+            self._hid_click(cmd.get("target", ""))
+        elif action == "type":
+            self._hid_type(cmd.get("text", ""))
+        elif action == "key":
+            pyautogui.press(cmd.get("key", "enter"))
+        elif action == "open":
+            pyautogui.hotkey('win', 'r')
+            time.sleep(0.3)
+            pyautogui.write(cmd.get("app", "chrome"))
+            pyautogui.press('enter')
+        elif action == "search":
+            pyautogui.hotkey('win', 'r')
+            time.sleep(0.3)
+            pyautogui.write('chrome')
+            pyautogui.press('enter')
+            time.sleep(2)
+            pyautogui.write(cmd.get("query", ""))
+            pyautogui.press('enter')
+        elif action == "report":
+            self._log(f"IA dice: {cmd.get('message', '')}")
 
     def _execute_step(self):
         """Ejecuta el paso actual del plan"""
