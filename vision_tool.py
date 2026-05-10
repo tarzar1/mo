@@ -224,10 +224,15 @@ class VisionToolPro:
             self._auto_execute()
 
     def _toggle_desktop(self):
-        self.desktop = self.agent_desktop if self.desktop == 1 else 1
+        target = self.agent_desktop if self.desktop == 1 else 1
+        self.switcher.switch_to(target)
+        self.desktop = target
         self.desk_btn.configure(text=f"Escritorio {self.desktop}")
-        self.switcher.switch_to(self.desktop)
         self._log(f"Cambiado a Escritorio {self.desktop}")
+        # Si estamos en escritorio 2, capturar en vivo
+        if self.desktop == self.agent_desktop:
+            time.sleep(0.3)
+            self.last_agent_frame = ImageGrab.grab(all_screens=True)
 
     def _toggle_feed(self):
         self.feed_active = not self.feed_active
@@ -245,19 +250,14 @@ class VisionToolPro:
             self._log("ERROR: No se pudo capturar escritorio 2")
 
     def _capture_agent_frame(self):
-        """Cambia al escritorio 2, captura, vuelve. Rapido (<400ms)"""
-        if self.desktop == self.agent_desktop:
-            img = ImageGrab.grab(all_screens=True)
-            self.last_agent_frame = img
-            self._last_capture_time = time.time()
-            return
+        """Cambia al escritorio 2, captura, vuelve. Rapido (<800ms)"""
         self.switcher.go_agent()
-        time.sleep(0.25)
+        time.sleep(0.5)  # Esperar renderizado
         img = ImageGrab.grab(all_screens=True)
         self.last_agent_frame = img
         self._last_capture_time = time.time()
+        self._log(f"Capturado escritorio 2: {img.size[0]}x{img.size[1]}")
         self.switcher.go_user()
-        time.sleep(0.1)
 
     def _approve_plan(self):
         if self.current_plan:
