@@ -1,7 +1,7 @@
 """AI Agent Final v3 - Inteligente, no se traba, elige mejor accion
    Observa, planea, ejecuta, verifica, corrige"""
 
-import os, sys, time, re, subprocess
+import os, sys, time, re, random, subprocess
 import pyautogui, pytesseract, cv2, numpy as np
 
 for p in [r"C:\Program Files\Tesseract-OCR\tesseract.exe",
@@ -32,22 +32,41 @@ def see():
         except: pass
     return text, matches
 
-def click_word(word, matches=None, retries=3):
+def click_word(word, matches=None):
     if matches is None: _, matches = see()
-    for attempt in range(retries):
-        for m in matches:
-            if word.lower() in m[0].lower():
-                pyautogui.click(m[1], m[2])
-                time.sleep(0.5)
-                log(f"Click OK en '{m[0]}' ({m[1]},{m[2]})")
-                return True
-        time.sleep(0.3)
-        if attempt < retries - 1:
-            _, matches = see()
-    log(f"No clickeable: '{word}'")
+    for m in matches:
+        if word.lower() in m[0].lower():
+            log(f"Moviendo cursor a '{m[0]}' ({m[1]},{m[2]})...")
+            human_click(m[1], m[2])
+            log(f"Click OK en '{m[0]}'")
+            return True
+        time.sleep(0.1)
+    log(f"No encontre '{word}'")
     return False
 
+def human_move(x, y, steps=None):
+    """Mueve el cursor suavemente hasta (x,y) como un humano"""
+    mx, my = pyautogui.position()
+    if steps is None:
+        dist = ((x - mx)**2 + (y - my)**2)**0.5
+        steps = max(5, int(dist / 40))
+    for i in range(1, steps + 1):
+        t = i / steps
+        cx = mx + (x - mx) * t + random.uniform(-3, 3) * (1 - abs(2*t - 1))
+        cy = my + (y - my) * t + random.uniform(-2, 2) * (1 - abs(2*t - 1))
+        pyautogui.moveTo(int(cx), int(cy))
+        time.sleep(0.008)
+
+def human_click(x, y):
+    """Mueve cursor suavemente, hace hover, clickea"""
+    human_move(x, y)
+    time.sleep(0.15)
+    pyautogui.click()
+    time.sleep(0.1)
+
 def type_text(text):
+    pyautogui.write(text, interval=0.03)
+    log(f"Escrito: '{text[:40]}'")
     pyautogui.write(text, interval=0.03)
     log(f"Escrito: '{text[:40]}'")
 
