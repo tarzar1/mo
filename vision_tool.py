@@ -145,7 +145,7 @@ class VisionToolPro:
         left = ctk.CTkFrame(main)
         left.pack(side="left", fill="both", expand=True, padx=2)
 
-        ctk.CTkLabel(left, text=f"Live Feed (Escritorio {self.agent_desktop})",
+        ctk.CTkLabel(left, text=f"Live Feed | Tu escritorio: 1 | Mira escritorio: {self.agent_desktop}",
                      font=("Consolas", 11, "bold")).pack(pady=2)
         self.feed = ctk.CTkLabel(left, text="Cargando...", width=self.feed_w, height=self.feed_h)
         self.feed.pack(padx=4, pady=2)
@@ -192,8 +192,10 @@ class VisionToolPro:
     def _start(self):
         self._log("Vision Pro iniciada")
         self._log(f"Escritorio agente: {self.agent_desktop}")
-        # Captura inicial del escritorio 2
-        threading.Thread(target=self._capture_agent_frame, daemon=True).start()
+        self._log("Presiona 'Escritorio 1/2' para cambiar")
+        self._log("Presiona 'Refrescar' para capturar escritorio 2")
+        # Captura inicial SIN cambiar de escritorio
+        self.last_agent_frame = ImageGrab.grab(all_screens=True)
         self._update_feed()
 
     def _log(self, msg):
@@ -502,18 +504,21 @@ EJEMPLOS:
                 self.fps_counter = 0
                 self.fps_timer = now
 
-            # Cada ~12s (180 frames a 15fps): capturar escritorio 2 si feed activo
+            # Cada ~12s (180 frames a 15fps): capturar si feed activo y NO ejecutando
             if self.feed_active and self.frame_count % 180 == 0 and not self.execute_mode:
-                threading.Thread(target=self._capture_agent_frame, daemon=True).start()
+                self._capture_agent_frame()
 
             # OCR cada 30 frames
             if self.frame_count % 30 == 0:
                 threading.Thread(target=self._run_ocr, daemon=True).start()
 
-            # Usar frame cacheado del escritorio 2, o captura actual
+            # Usar frame cacheado del escritorio 2, o captura del escritorio 1
             frame_source = self.last_agent_frame
             if frame_source is None:
                 frame_source = ImageGrab.grab(all_screens=True)
+            else:
+                # Mostrar siempre el frame cacheado (sin recapturar desktop 1)
+                pass
 
             frame = cv2.cvtColor(np.array(frame_source), cv2.COLOR_RGB2BGR)
             display = cv2.resize(frame, (self.feed_w, self.feed_h))
