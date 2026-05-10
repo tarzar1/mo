@@ -86,7 +86,7 @@ class VisionToolPro:
         self.detections = []
         self.cmd_queue = queue.Queue()
         self.last_agent_frame = None  # Cache: ultimo frame del escritorio 2
-        self.feed_active = True  # Feed en vivo ON/OFF
+        self.feed_active = False  # Default: OFF, manual refresh only
 
         sw, sh = pyautogui.size()
         self.feed_w = 800
@@ -125,8 +125,8 @@ class VisionToolPro:
             fg_color="transparent", border_width=1,
             command=self._approve_plan).pack(side="left", padx=3, pady=2)
 
-        self.feed_btn = ctk.CTkButton(mb, text="Feed: ON", width=70, height=26,
-            fg_color="#1a3a1a", border_width=1, command=self._toggle_feed)
+        self.feed_btn = ctk.CTkButton(mb, text="Feed: OFF", width=70, height=26,
+            fg_color="transparent", border_width=1, command=self._toggle_feed)
         self.feed_btn.pack(side="left", padx=3, pady=2)
 
         ctk.CTkButton(mb, text="Refrescar", width=70, height=26,
@@ -496,9 +496,9 @@ EJEMPLOS:
                 self.fps_counter = 0
                 self.fps_timer = now
 
-            # Cada ~2.5s (40 frames a 15fps): capturar escritorio 2
-            if self.feed_active and self.frame_count % 40 == 0:
-                self._capture_agent_frame()
+            # Cada ~12s (180 frames a 15fps): capturar escritorio 2 si feed activo
+            if self.feed_active and self.frame_count % 180 == 0 and not self.execute_mode:
+                threading.Thread(target=self._capture_agent_frame, daemon=True).start()
 
             # OCR cada 30 frames
             if self.frame_count % 30 == 0:
