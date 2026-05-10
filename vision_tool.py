@@ -1,11 +1,13 @@
-"""Vision Control Tool - Multi-Monitor v3
-Muestra feed en vivo del monitor 2 con OCR overlay.
-Terminal integrada, comandos, control HID."""
+"""Vision Control Tool Pro - Plan + Ejecutar + Multi-Escritorio
+MODO PLAN: observa, analiza, propone plan (no ejecuta)
+MODO EJECUTAR: sigue el plan paso a paso en el escritorio 2
+Escritorios virtuales: cambia automaticamente con Win+Ctrl+Left/Right"""
 
-import os, time, random, threading, queue, cv2, numpy as np
+import os, sys, time, re, threading, queue, cv2, numpy as np
 import customtkinter as ctk
 from PIL import Image, ImageGrab
-import pyautogui, pytesseract, win32api
+import pyautogui, pytesseract
+from desktop_switcher import DesktopSwitcher
 
 for p in [r"C:\Program Files\Tesseract-OCR\tesseract.exe",
           r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"]:
@@ -15,36 +17,67 @@ pyautogui.FAILSAFE = True
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-def get_monitors():
-    """Detecta todos los monitores conectados"""
-    monitors = []
-    try:
-        for h_monitor, h_dc, rect, flags in win32api.EnumDisplayMonitors(None, None):
-            left, top, right, bottom = rect
-            monitors.append({
-                'id': len(monitors) + 1,
-                'left': left, 'top': top,
-                'width': right - left,
-                'height': bottom - top,
-            })
-    except:
-        # Fallback: asumir 1 monitor
-        w, h = pyautogui.size()
-        monitors.append({'id': 1, 'left': 0, 'top': 0, 'width': w, 'height': h})
-    return monitors
+API = "http://192.168.4.23:8000"
 
-class VisionToolMulti:
-    def __init__(self, monitor_id=2):
-        self.monitors = get_monitors()
-        print(f"Monitores detectados: {self.monitors}")
+TASK_PLANS = {
+    "register": {
+        "keywords": ["registr", "crear cuenta", "signup"],
+        "steps": [
+            {"icon": "👁", "desc": "Ver pantalla actual"},
+            {"icon": "👆", "desc": "Click en 'Registrate'", "action": "click", "target": "Registr"},
+            {"icon": "👁", "desc": "Verificar formulario visible"},
+            {"icon": "⌨", "desc": "Escribir nombre", "action": "type", "field": "name"},
+            {"icon": "⌨", "desc": "Escribir email", "action": "type", "field": "email"},
+            {"icon": "⌨", "desc": "Escribir password", "action": "type", "field": "password"},
+            {"icon": "👆", "desc": "Click en 'Crear cuenta'", "action": "click", "target": "Crear cuenta"},
+            {"icon": "👁", "desc": "Verificar registro exitoso"},
+            {"icon": "🌐", "desc": "Respaldo via API (si fallo UI)"},
+        ]
+    },
+    "login": {
+        "keywords": ["login", "iniciar sesion", "loguear"],
+        "steps": [
+            {"icon": "👁", "desc": "Ver pantalla actual"},
+            {"icon": "👆", "desc": "Click en 'Correo'", "action": "click", "target": "Correo"},
+            {"icon": "⌨", "desc": "Escribir email", "action": "type", "field": "email"},
+            {"icon": "👆", "desc": "Click en 'Contrase'", "action": "click", "target": "Contrase"},
+            {"icon": "⌨", "desc": "Escribir password", "action": "type", "field": "password"},
+            {"icon": "⌨", "desc": "Presionar Enter", "action": "key", "key": "enter"},
+            {"icon": "👁", "desc": "Verificar login exitoso"},
+        ]
+    },
+    "search": {
+        "keywords": ["buscar", "search", "google"],
+        "steps": [
+            {"icon": "🔍", "desc": "Abrir Chrome (Win+R, chrome, Enter)"},
+            {"icon": "⌨", "desc": "Escribir query de busqueda"},
+            {"icon": "⌨", "desc": "Presionar Enter"},
+        ]
+    },
+    "open_app": {
+        "keywords": ["abrir", "open"],
+        "steps": [
+            {"icon": "🔍", "desc": "Win+R"},
+            {"icon": "⌨", "desc": "Escribir nombre de la app"},
+            {"icon": "⌨", "desc": "Presionar Enter"},
+        ]
+    }
+}
 
-        if monitor_id <= len(self.monitors):
-            self.monitor = self.monitors[monitor_id - 1]
-        else:
-            self.monitor = self.monitors[0]
-
+class VisionToolPro:
+    def __init__(self, agent_desktop=2):
         self.mode = "OBSERVADOR"
-        self.fps = 20
+        self.desktop = 1
+        self.agent_desktop = agent_desktop
+        self.switcher = DesktopSwitcher(total=agent_desktop)
+        self.plan_mode = True
+        self.execute_mode = False
+        self.current_plan = None
+        self.plan_step = 0
+        self.current_task = None
+        self.task_params = {}
+
+        self.fps = 15
         self.frame_count = 0
         self.fps_counter = 0
         self.fps_timer = time.time()
@@ -53,38 +86,46 @@ class VisionToolMulti:
         self.detections = []
         self.cmd_queue = queue.Queue()
 
-        self.mon_w = self.monitor['width']
-        self.mon_h = self.monitor['height']
+        sw, sh = pyautogui.size()
         self.feed_w = 800
-        self.feed_h = int(self.feed_w * self.mon_h / self.mon_w)
+        self.feed_h = int(self.feed_w * sh / sw)
 
         self.win = ctk.CTk()
-        self.win.title(f"Vision Monitor {monitor_id} - {self.mon_w}x{self.mon_h}")
-        self.win.geometry("1100x750")
+        self.win.title(f"Vision Pro - Escritorio {self.agent_desktop}")
+        self.win.geometry("1150x800")
         self.win.protocol("WM_DELETE_WINDOW", self._close)
 
         self._build_ui()
         self._start()
 
     def _build_ui(self):
-        # Menu bar
-        mb = ctk.CTkFrame(self.win, height=30)
-        mb.pack(fill="x", side="top")
+        mb = ctk.CTkFrame(self.win, height=32)
+        mb.pack(fill="x", side="top", padx=0, pady=0)
 
-        self.mode_btn = ctk.CTkButton(mb, text="Modo: OBSERVADOR", width=140, height=26,
-                                       fg_color="transparent", border_width=1,
-                                       command=self._toggle_mode)
-        self.mode_btn.pack(side="left", padx=4, pady=2)
+        # Botones de modo
+        self.mode_btn = ctk.CTkButton(mb, text="OBSERVADOR", width=100, height=26,
+            fg_color="transparent", border_width=1, command=self._toggle_mode)
+        self.mode_btn.pack(side="left", padx=3, pady=2)
 
-        for label, cmd in [("Ver OCR", self._show_ocr), ("Click", self._prompt_click),
-                           ("Escribir", self._prompt_type), ("Tecla", self._prompt_key)]:
-            ctk.CTkButton(mb, text=label, width=70, height=26,
-                         fg_color="transparent", border_width=1,
-                         command=cmd).pack(side="left", padx=2)
+        self.plan_btn = ctk.CTkButton(mb, text="Plan: ON", width=70, height=26,
+            fg_color="#1a3a1a", border_width=1, command=self._toggle_plan)
+        self.plan_btn.pack(side="left", padx=3, pady=2)
 
-        mon_label = f"Monitor {self.monitor['id']}: {self.mon_w}x{self.mon_h}"
-        ctk.CTkLabel(mb, text=mon_label, font=("Consolas", 8),
-                    text_color="#888").pack(side="right", padx=10, pady=2)
+        self.exec_btn = ctk.CTkButton(mb, text="Ejecutar: OFF", width=85, height=26,
+            fg_color="transparent", border_width=1, command=self._toggle_execute)
+        self.exec_btn.pack(side="left", padx=3, pady=2)
+
+        self.desk_btn = ctk.CTkButton(mb, text=f"Escritorio {self.desktop}", width=90, height=26,
+            fg_color="transparent", border_width=1, command=self._toggle_desktop)
+        self.desk_btn.pack(side="left", padx=3, pady=2)
+
+        ctk.CTkButton(mb, text="Aprobar Plan", width=90, height=26,
+            fg_color="transparent", border_width=1,
+            command=self._approve_plan).pack(side="left", padx=3, pady=2)
+
+        ctk.CTkButton(mb, text="?", width=25, height=26,
+            fg_color="transparent", border_width=1,
+            command=self._show_help).pack(side="right", padx=6)
 
         # Main
         main = ctk.CTkFrame(self.win)
@@ -94,138 +135,325 @@ class VisionToolMulti:
         left = ctk.CTkFrame(main)
         left.pack(side="left", fill="both", expand=True, padx=2)
 
-        ctk.CTkLabel(left, text="Live Feed (Monitor 2)", font=("Consolas", 11, "bold")).pack()
+        ctk.CTkLabel(left, text=f"Live Feed (Escritorio {self.agent_desktop})",
+                     font=("Consolas", 11, "bold")).pack(pady=2)
         self.feed = ctk.CTkLabel(left, text="Cargando...", width=self.feed_w, height=self.feed_h)
         self.feed.pack(padx=4, pady=2)
 
-        # RIGHT: OCR + Log
-        right = ctk.CTkFrame(main, width=280)
-        right.pack(side="right", fill="both", padx=2)
-
-        ctk.CTkLabel(right, text="OCR Output", font=("Consolas", 11, "bold")).pack()
-        self.ocr_box = ctk.CTkTextbox(right, font=("Consolas", 9), width=260)
-        self.ocr_box.pack(fill="both", expand=True, padx=4, pady=2)
-
-        ctk.CTkLabel(right, text="Detecciones", font=("Consolas", 10)).pack()
-        self.det_box = ctk.CTkTextbox(right, font=("Consolas", 9), height=80, width=260)
+        # Detecciones mini
+        self.det_box = ctk.CTkTextbox(left, font=("Consolas", 8), height=50)
         self.det_box.pack(fill="x", padx=4, pady=2)
 
-        ctk.CTkLabel(right, text="Log", font=("Consolas", 10)).pack()
-        self.log_box = ctk.CTkTextbox(right, font=("Consolas", 8), height=70, width=260)
-        self.log_box.pack(fill="x", padx=4, pady=2)
+        # RIGHT: Panels
+        right = ctk.CTkFrame(main, width=320)
+        right.pack(side="right", fill="both", padx=2)
 
-        # BOTTOM: Terminal
-        cmd_frame = ctk.CTkFrame(self.win, height=40)
-        cmd_frame.pack(fill="x", side="bottom", padx=4, pady=4)
+        # Plan panel
+        ctk.CTkLabel(right, text="PLAN", font=("Consolas", 12, "bold"),
+                     text_color="#00d97e").pack(pady=2)
+        self.plan_box = ctk.CTkTextbox(right, font=("Consolas", 10), height=200, width=300)
+        self.plan_box.pack(fill="x", padx=4, pady=2)
 
-        self.cmd_entry = ctk.CTkEntry(cmd_frame,
-            placeholder_text="click X | escribir texto | presionar enter | mode control",
+        # OCR panel
+        ctk.CTkLabel(right, text="OCR / Log", font=("Consolas", 10)).pack(pady=2)
+        self.ocr_box = ctk.CTkTextbox(right, font=("Consolas", 9), height=200, width=300)
+        self.ocr_box.pack(fill="both", expand=True, padx=4, pady=2)
+
+        # BOTTOM: Task input
+        task_frame = ctk.CTkFrame(self.win, height=40)
+        task_frame.pack(fill="x", side="bottom", padx=4, pady=4)
+
+        self.task_entry = ctk.CTkEntry(task_frame,
+            placeholder_text="Tarea: registra a user@test.com password 123456",
             font=("Consolas", 11))
-        self.cmd_entry.pack(side="left", fill="x", expand=True, padx=4, pady=4)
-        self.cmd_entry.bind("<Return>", lambda e: self._send_cmd())
+        self.task_entry.pack(side="left", fill="x", expand=True, padx=4, pady=4)
+        self.task_entry.bind("<Return>", lambda e: self._create_plan())
 
-        ctk.CTkButton(cmd_frame, text="Enviar", width=70, command=self._send_cmd).pack(side="right", padx=4, pady=4)
+        ctk.CTkButton(task_frame, text="Generar Plan", width=100,
+                      command=self._create_plan).pack(side="right", padx=4, pady=4)
+
+        ctk.CTkButton(task_frame, text="Ejecutar Paso", width=100,
+                      fg_color="#8B0000", command=self._execute_step).pack(side="right", padx=4, pady=4)
 
         # Status
         self.st_bar = ctk.CTkLabel(self.win, text="Listo", font=("Consolas", 9), height=20)
         self.st_bar.pack(fill="x", side="bottom")
 
     def _start(self):
-        self._log(f"Monitor {self.monitor['id']}: {self.mon_w}x{self.mon_h}")
+        self._log("Vision Pro iniciada")
+        self._log(f"Escritorio agente: {self.agent_desktop}")
         self._update_feed()
 
     def _log(self, msg):
-        ts = time.strftime("%H:%M:%S")
-        self.log_box.insert("end", f"[{ts}] {msg}\n")
-        self.log_box.see("end")
+        self.ocr_box.insert("end", f"{msg}\n")
+        self.ocr_box.see("end")
 
     def _toggle_mode(self):
         self.mode = "CONTROL" if self.mode == "OBSERVADOR" else "OBSERVADOR"
-        self.mode_btn.configure(text=f"Modo: {self.mode}",
-            fg_color="#8B0000" if self.mode == "CONTROL" else "#1a3a1a")
+        self.mode_btn.configure(text=self.mode,
+            fg_color="#8B0000" if self.mode == "CONTROL" else "transparent")
         self._log(f"MODO: {self.mode}")
 
-    def _show_ocr(self):
-        self.ocr_box.delete("1.0", "end")
-        self.ocr_box.insert("1.0", self.last_ocr or "(Procesando...)")
+    def _toggle_plan(self):
+        self.plan_mode = not self.plan_mode
+        self.plan_btn.configure(text=f"Plan: {'ON' if self.plan_mode else 'OFF'}",
+            fg_color="#1a3a1a" if self.plan_mode else "transparent")
+        self._log(f"Plan: {'ON' if self.plan_mode else 'OFF'}")
 
-    def _prompt_click(self):
-        d = ctk.CTkInputDialog(title="Click", text="Texto a buscar y clickear:")
-        t = d.get_input()
-        if t: self._exec(f"click {t}")
+    def _toggle_execute(self):
+        self.execute_mode = not self.execute_mode
+        self.exec_btn.configure(text=f"Ejecutar: {'ON' if self.execute_mode else 'OFF'}",
+            fg_color="#8B0000" if self.execute_mode else "transparent")
+        self._log(f"Ejecutar: {'ON' if self.execute_mode else 'OFF'}")
+        if self.execute_mode and self.current_plan:
+            self._log("Ejecutando plan automaticamente...")
+            self._auto_execute()
 
-    def _prompt_type(self):
-        d = ctk.CTkInputDialog(title="Escribir", text="Texto:")
-        t = d.get_input()
-        if t: self._exec(f"escribir {t}")
+    def _toggle_desktop(self):
+        self.desktop = self.agent_desktop if self.desktop == 1 else 1
+        self.desk_btn.configure(text=f"Escritorio {self.desktop}")
+        self.switcher.switch_to(self.desktop)
+        self._log(f"Cambiado a Escritorio {self.desktop}")
 
-    def _prompt_key(self):
-        d = ctk.CTkInputDialog(title="Tecla", text="Tecla:")
-        t = d.get_input()
-        if t: self._exec(f"presionar {t}")
+    def _approve_plan(self):
+        if self.current_plan:
+            self.execute_mode = True
+            self.exec_btn.configure(text="Ejecutar: ON", fg_color="#8B0000")
+            self._log("Plan APROBADO. Ejecutando...")
+            self._auto_execute()
+        else:
+            self._log("No hay plan. Genera uno primero.")
 
-    def _send_cmd(self):
-        cmd = self.cmd_entry.get().strip()
-        self.cmd_entry.delete(0, "end")
-        if cmd:
-            self._log(f"CMD: {cmd}")
-            self._exec(cmd)
+    def _show_help(self):
+        d = ctk.CTkToplevel(self.win)
+        d.title("Ayuda")
+        d.geometry("450x350")
+        ctk.CTkLabel(d, text="""MODO PLAN:
+  - Escribe una tarea y presiona "Generar Plan"
+  - El plan aparece en el panel PLAN
+  - Revisa los pasos
+  - Presiona "Aprobar Plan"
+  - Activa "Ejecutar: ON"
 
-    def _exec(self, cmd):
-        p = cmd.split(' ', 1)
-        a = p[0].lower()
-        g = p[1] if len(p) > 1 else None
+MODO EJECUTAR:
+  - El plan se ejecuta paso a paso
+  - Cada paso se verifica con OCR
+  - Si falla, para y pregunta
 
-        if a == 'mode' and g in ('control', 'observador'):
-            self.mode = "CONTROL" if g == "control" else "OBSERVADOR"
-            self.mode_btn.configure(text=f"Modo: {self.mode}",
-                fg_color="#8B0000" if self.mode == "CONTROL" else "#1a3a1a")
-            self._log(f"MODO: {self.mode}")
+ESCRITORIOS:
+  - El agente trabaja en el escritorio 2
+  - Cambia automaticamente con Win+Ctrl+Flecha
+  - Tu trabajas en el escritorio 1 sin interrupcion
+
+EJEMPLOS:
+  registra a user@test.com password 123456
+  login con conductor@test.com
+  abre chrome y busca python""", font=("Consolas", 11), justify="left").pack(padx=20, pady=20)
+
+    # ─── PLAN ENGINE ─────────────────────────────────
+
+    def _create_plan(self):
+        task = self.task_entry.get().strip()
+        self.task_entry.delete(0, "end")
+        if not task:
             return
 
-        if self.mode != "CONTROL":
-            self._log("Activa modo CONTROL")
+        self.current_task = task.lower()
+        self._log(f"TAREA: {task}")
+
+        # Detectar tipo
+        plan_type = None
+        for ptype, info in TASK_PLANS.items():
+            for kw in info["keywords"]:
+                if kw in self.current_task:
+                    plan_type = ptype
+                    break
+
+        if not plan_type:
+            self._log("No reconozco la tarea. Intenta:")
+            self._log("  'registra a user@test.com'")
+            self._log("  'login con conductor@test.com'")
+            self.plan_box.delete("1.0", "end")
+            self.plan_box.insert("1.0", "Tarea no reconocida")
             return
 
-        try:
-            if a == 'click' and g:
-                self._click_text(g)
-            elif a == 'escribir' and g:
-                pyautogui.write(g, interval=0.04)
-                self._log(f"Escrito: {g}")
-            elif a == 'presionar' and g:
-                pyautogui.press(g)
-                self._log(f"Tecla: {g}")
-            elif a == 'hotkey' and g:
-                pyautogui.hotkey(*g.split('+'))
-            elif a == 'mover' and g:
-                x, y = map(int, g.split(','))
-                pyautogui.moveTo(x, y, duration=0.2)
-        except Exception as e:
-            self._log(f"Error: {e}")
+        # Extraer params
+        email_match = re.search(r'[\w.]+@[\w.]+', task)
+        if email_match:
+            self.task_params['email'] = email_match.group(0)
 
-    def _click_text(self, text):
-        for d in self.detections:
-            if text.lower() in d['word'].lower():
-                # Ajustar coordenadas: las detecciones son relativas al monitor capturado
-                x = d['x'] + self.monitor['left']
-                y = d['y'] + self.monitor['top']
-                pyautogui.click(x, y)
-                self._log(f"CLICK '{d['word']}' ({x},{y})")
+        pass_match = re.search(r'pass(?:word)?[:\s]*(\S+)', task, re.IGNORECASE)
+        if pass_match:
+            self.task_params['password'] = pass_match.group(1)
+
+        name_match = re.search(r'(?:nombre|name|como)[:\s]*(\w+)', task, re.IGNORECASE)
+        if name_match:
+            self.task_params['name'] = name_match.group(1)
+
+        # Generar plan
+        steps = TASK_PLANS[plan_type]["steps"]
+        self.current_plan = {"type": plan_type, "steps": steps, "current": 0}
+        self.plan_step = 0
+
+        self.plan_box.delete("1.0", "end")
+        plan_text = f"PLAN: {plan_type.upper()}\n" + "-" * 30 + "\n"
+        for i, s in enumerate(steps):
+            plan_text += f"  [{i+1}] {s['icon']} {s['desc']}\n"
+        plan_text += f"\nModo Plan: {'ON' if self.plan_mode else 'OFF'}  |  Ejecutar: {'ON' if self.execute_mode else 'OFF'}"
+        self.plan_box.insert("1.0", plan_text)
+
+        self._log(f"Plan creado: {len(steps)} pasos")
+
+        # Si ya esta en modo ejecutar, ejecutar inmediatamente
+        if self.execute_mode:
+            self._auto_execute()
+
+    def _auto_execute(self):
+        """Ejecuta todos los pasos del plan automaticamente"""
+        if not self.current_plan:
+            return
+
+        def exec_loop():
+            steps = self.current_plan["steps"]
+            while self.plan_step < len(steps) and self.execute_mode:
+                time.sleep(1.5)
+                self.win.after(0, self._execute_step)
+                time.sleep(2)
+
+        threading.Thread(target=exec_loop, daemon=True).start()
+
+    def _execute_step(self):
+        """Ejecuta el paso actual del plan"""
+        if not self.current_plan:
+            self._log("No hay plan")
+            return
+
+        steps = self.current_plan["steps"]
+        if self.plan_step >= len(steps):
+            self._log("Plan completado!")
+            self._mark_step_done()
+            return
+
+        step = steps[self.plan_step]
+        self._log(f"Paso {self.plan_step+1}/{len(steps)}: {step['desc']}")
+
+        # Cambiar al escritorio del agente
+        if self.desktop != self.agent_desktop:
+            self.switcher.go_agent()
+            time.sleep(0.3)
+
+        ok = False
+        action = step.get("action")
+
+        if action == "click":
+            target = step.get("target", "")
+            ok = self._hid_click(target)
+        elif action == "type":
+            field = step.get("field", "")
+            if field == "name":
+                self._hid_type(self.task_params.get("name", "User"))
+                ok = True
+            elif field == "email":
+                self._hid_type(self.task_params.get("email", "user@test.com"))
+                ok = True
+            elif field == "password":
+                self._hid_type(self.task_params.get("password", "123456"))
+                ok = True
+        elif action == "key":
+            key = step.get("key", "enter")
+            pyautogui.press(key)
+            ok = True
+        else:
+            ok = True  # pasos de observacion sin accion
+
+        # API fallback para registro
+        if self.current_plan.get("type") == "register" and self.plan_step == len(steps) - 2:
+            try:
+                import requests
+                name = self.task_params.get("name", "User")
+                email = self.task_params.get("email", "tmp@test.com")
+                password = self.task_params.get("password", "123456")
+                r = requests.post(f"{API}/Create_driver/", json={
+                    "name": name, "email": email, "password": password, "role": "driver"
+                }, timeout=5)
+                self._log(f"API: {'OK' if r.status_code in (200, 201) else r.status_code}")
+            except:
+                pass
+
+        if ok:
+            self._mark_step_done()
+        else:
+            self._log(f"PASO FALLIDO: {step['desc']}. Pausado.")
+            self._mark_step_error()
+            if self.execute_mode:
+                self.execute_mode = False
+                self.exec_btn.configure(text="Ejecutar: OFF (fallo)", fg_color="transparent")
                 return
-        self._log(f"No encontrado: {text}")
+
+        self.plan_step += 1
+
+    def _hid_click(self, text):
+        """Busca texto y clickea"""
+        self._log(f"Buscando '{text}'...")
+        scr = self._ocr_current()
+        matches = self._find_text_ocr(text, scr, 35)
+        if matches:
+            x, y, word = matches[0][0], matches[0][1], matches[0][2]
+            pyautogui.click(x, y)
+            self._log(f"Click en '{word}' ({x},{y})")
+            time.sleep(1.5)
+            return True
+        self._log(f"No encontre '{text}'")
+        return False
+
+    def _hid_type(self, text):
+        pyautogui.write(text, interval=0.04)
+        self._log(f"Escrito: {text}")
+        time.sleep(0.3)
+
+    def _ocr_current(self):
+        img = ImageGrab.grab(all_screens=True)
+        gray = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
+        return cv2.resize(gray, (0,0), fx=0.5, fy=0.5)
+
+    def _find_text_ocr(self, text, gray, min_conf=35):
+        data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT)
+        matches = []
+        for i in range(len(data['text'])):
+            try:
+                conf = int(data['conf'][i])
+                word = data['text'][i].strip()
+                if conf > min_conf and text.lower() in word.lower():
+                    x = (data['left'][i] + data['width'][i]//2) * 2
+                    y = (data['top'][i] + data['height'][i]//2) * 2
+                    matches.append((x, y, word, conf))
+            except: pass
+        return matches
+
+    def _mark_step_done(self):
+        text = self.plan_box.get("1.0", "end")
+        marker = f"  [{self.plan_step+1}]"
+        new_marker = f"  [{self.plan_step+1}] [OK]"
+        text = text.replace(marker, new_marker)
+        self.plan_box.delete("1.0", "end")
+        self.plan_box.insert("1.0", text)
+
+    def _mark_step_error(self):
+        text = self.plan_box.get("1.0", "end")
+        marker = f"  [{self.plan_step+1}]"
+        new_marker = f"  [{self.plan_step+1}] [FAIL]"
+        text = text.replace(marker, new_marker)
+        self.plan_box.delete("1.0", "end")
+        self.plan_box.insert("1.0", text)
+
+    # ─── LIVE FEED ────────────────────────────────────
 
     def _update_feed(self):
         try:
-            # Capturar SOLO el monitor seleccionado
-            bbox = (self.monitor['left'], self.monitor['top'],
-                    self.monitor['left'] + self.mon_w,
-                    self.monitor['top'] + self.mon_h)
-            img = ImageGrab.grab(bbox=bbox, all_screens=True)
+            img = ImageGrab.grab(all_screens=True)
             frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
             self.frame_count += 1
 
-            # FPS
             self.fps_counter += 1
             now = time.time()
             if now - self.fps_timer > 1.0:
@@ -233,82 +461,52 @@ class VisionToolMulti:
                 self.fps_counter = 0
                 self.fps_timer = now
 
-            # OCR cada 2s
-            if self.frame_count % 40 == 0:
+            if self.frame_count % 30 == 0:
                 threading.Thread(target=self._run_ocr, daemon=True).start()
 
-            # Dibujar feed
             display = cv2.resize(frame, (self.feed_w, self.feed_h))
-            scale_x = self.feed_w / self.mon_w
-            scale_y = self.feed_h / self.mon_h
-
-            for d in self.detections[:20]:
-                rx = int(d['rel_x'] * scale_x); ry = int(d['rel_y'] * scale_y)
-                rw = int(d['w'] * scale_x); rh = int(d['h'] * scale_y)
+            for d in self.detections[:10]:
+                rx = int(d['x'] * self.feed_w / frame.shape[1])
+                ry = int(d['y'] * self.feed_h / frame.shape[0])
                 if 0 <= rx < self.feed_w and 0 <= ry < self.feed_h:
-                    cv2.rectangle(display, (rx-rw//2, ry-rh//2),
-                                 (rx+rw//2, ry+rh//2), (0, 255, 100), 1)
+                    cv2.rectangle(display, (rx-15, ry-10), (rx+15, ry+10), (0, 255, 100), 1)
 
-            cv2.putText(display, f"{self.mode} | {self.display_fps}fps | Monitor {self.monitor['id']}",
-                       (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4,
-                       (0, 255, 0) if self.mode == "OBSERVADOR" else (0, 80, 255), 1)
-
-            # Cursor
-            mx, my = pyautogui.position()
-            rel_x = mx - self.monitor['left']
-            rel_y = my - self.monitor['top']
-            cux, cuy = int(rel_x * scale_x), int(rel_y * scale_y)
-            if 0 <= cux < self.feed_w and 0 <= cuy < self.feed_h:
-                cv2.drawMarker(display, (cux, cuy), (0, 255, 255), cv2.MARKER_CROSS, 8, 1)
+            info = f"{self.mode} | {self.display_fps}fps | Escritorio {self.desktop}"
+            cv2.putText(display, info, (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4,
+                       (0, 255, 100) if self.mode == "OBSERVADOR" else (0, 80, 255), 1)
 
             rgb = cv2.cvtColor(display, cv2.COLOR_BGR2RGB)
-            pil_img = Image.fromarray(rgb)
-            ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(self.feed_w, self.feed_h))
+            ctk_img = ctk.CTkImage(light_image=Image.fromarray(rgb), size=(self.feed_w, self.feed_h))
             self.feed.configure(image=ctk_img, text="")
 
+            mx, my = pyautogui.position()
             self.st_bar.configure(
-                text=f"{self.mode} | {self.display_fps}fps | M{self.monitor['id']} {self.mon_w}x{self.mon_h} | Cursor: rel({rel_x},{rel_y}) abs({mx},{my})")
-
-            if now - getattr(self, '_ocr_timer', 0) > 2 and self.last_ocr:
-                self._ocr_timer = now
-                self.ocr_box.delete("1.0", "end")
-                self.ocr_box.insert("1.0", self.last_ocr[:1000])
-
-        except Exception as e:
-            pass
-
-        self.win.after(50, self._update_feed)
+                text=f"{self.mode} | {self.display_fps}fps | Escritorio {self.desktop} | Plan: {self.plan_step}/{len(self.current_plan['steps']) if self.current_plan else 0} pasos | Cursor: ({mx},{my})")
+        except: pass
+        self.win.after(60, self._update_feed)
 
     def _run_ocr(self):
         try:
-            bbox = (self.monitor['left'], self.monitor['top'],
-                    self.monitor['left'] + self.mon_w,
-                    self.monitor['top'] + self.mon_h)
-            img = ImageGrab.grab(bbox=bbox, all_screens=True)
+            img = ImageGrab.grab(all_screens=True)
             gray = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
             gray = cv2.resize(gray, (0,0), fx=0.5, fy=0.5)
-
             self.last_ocr = pytesseract.image_to_string(gray)
-            data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT)
+
             det = []
+            data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT)
             for i in range(len(data['text'])):
                 try:
                     conf = int(data['conf'][i])
                     word = data['text'][i].strip()
                     if conf > 40 and len(word) > 2:
-                        det.append({
-                            'word': word,
+                        det.append({'word': word,
                             'x': (data['left'][i]+data['width'][i]//2)*2,
                             'y': (data['top'][i]+data['height'][i]//2)*2,
-                            'rel_x': (data['left'][i]+data['width'][i]//2)*2,
-                            'rel_y': (data['top'][i]+data['height'][i]//2)*2,
-                            'w': data['width'][i]*2, 'h': data['height'][i]*2,
-                            'conf': conf
-                        })
+                            'conf': conf})
                 except: pass
             self.detections = det
 
-            lines = [f"{d['word']} ({d['rel_x']},{d['rel_y']})" for d in det[:15]]
+            lines = [f"{d['word']} ({d['x']},{d['y']})" for d in det[:8]]
             self.det_box.delete("1.0", "end")
             self.det_box.insert("1.0", "\n".join(lines))
         except: pass
@@ -319,7 +517,7 @@ class VisionToolMulti:
 if __name__ == "__main__":
     import argparse
     p = argparse.ArgumentParser()
-    p.add_argument("--monitor", type=int, default=2, help="Numero de monitor (1, 2, ...)")
+    p.add_argument("--desktop", type=int, default=2, help="Escritorio virtual del agente (1=usuario, 2=agente)")
     args = p.parse_args()
-    app = VisionToolMulti(monitor_id=args.monitor)
+    app = VisionToolPro(agent_desktop=args.desktop)
     app.win.mainloop()
