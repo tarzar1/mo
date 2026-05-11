@@ -1,0 +1,156 @@
+﻿<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Emoji Matrix 8x8</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui;background:#0a1628;color:#fff;min-height:100vh}
+:root{--primary:#00d97e;--card:#0d1e30;--border:#1a2a3a;--muted:#4a6380}
+header{background:var(--card);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
+h1{font-size:18px;background:linear-gradient(135deg,var(--primary),#0066ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.status{font-size:12px;font-weight:600;padding:6px 14px;border-radius:20px}
+.ok{background:rgba(0,217,126,.15);color:var(--primary);border:1px solid rgba(0,217,126,.3)}
+.err{background:rgba(255,59,92,.15);color:#ff3b5c;border:1px solid rgba(255,59,92,.3)}
+.container{max-width:900px;margin:0 auto;padding:16px}
+.card{background:var(--card);border-radius:14px;padding:18px;border:1px solid var(--border);margin-bottom:12px}
+h2{font-size:14px;margin-bottom:10px;color:var(--muted)}
+
+.connect{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.connect input{flex:1;min-width:180px;background:var(--card);border:1px solid var(--border);padding:10px;border-radius:10px;color:#fff;outline:none;font-size:13px}
+.connect input:focus{border-color:var(--primary)}
+.btn{padding:10px 18px;border:none;border-radius:10px;cursor:pointer;font-size:13px;font-weight:600}
+.btn-primary{background:var(--primary);color:#000}
+.btn-outline{background:transparent;border:1px solid var(--border);color:#fff}
+
+.slider-group{margin:8px 0}
+.slider-group label{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+.slider-group label span{color:#fff;font-weight:600}
+input[type=range]{width:100%;height:6px;border-radius:3px;background:var(--border);-webkit-appearance:none}
+input[type=range]::-webkit-slider-thumb{appearance:none;width:18px;height:18px;border-radius:50%;background:var(--primary);cursor:pointer}
+
+.emoji-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.emoji-cell{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;text-align:center;transition:.15s;user-select:none}
+.emoji-cell:hover{border-color:var(--primary);background:#122438}
+.emoji-cell.active{border-color:var(--primary);border-width:2px;background:rgba(0,217,126,.1)}
+.emoji-grid-preview{display:grid;grid-template-columns:repeat(8,1fr);width:64px;height:64px;margin:0 auto 8px;gap:1px}
+.emoji-grid-preview div{border-radius:1px}
+.log{font-family:monospace;font-size:11px;max-height:100px;overflow-y:auto;color:var(--muted)}
+.log div{padding:2px 0}
+</style></head><body>
+
+<header>
+  <h1>🎨 Emoji Matrix 8x8</h1>
+  <div class="status err" id="status">● Desconectado</div>
+</header>
+
+<div class="container">
+  <div class="card">
+    <h2>📶 Conexion WiFi</h2>
+    <div class="connect">
+      <input type="text" id="ipInput" placeholder="IP del ESP32 (192.168.4.39)" value="192.168.4.39">
+      <button class="btn btn-primary" onclick="connect()">Conectar</button>
+    </div>
+  </div>
+
+  <div class="card" id="controlPanel" style="display:none">
+    <h2>⚙️ Control</h2>
+    <div class="slider-group">
+      <label>Brillo <span id="briVal">80%</span></label>
+      <input type="range" id="briSlider" min="1" max="100" value="80" oninput="setBrightness(this.value)">
+    </div>
+    <button class="btn btn-outline" onclick="toggleAuto()" style="margin-top:8px" id="autoBtn">⏯ Auto-Cycle: ON</button>
+  </div>
+
+  <div class="card" id="emojiPanel" style="display:none">
+    <h2 id="emojiTitle">😊 Emojis</h2>
+    <div class="emoji-grid" id="emojiGrid"></div>
+  </div>
+
+  <div class="card" id="logPanel" style="display:none">
+    <h2>📋 Log</h2>
+    <div class="log" id="log"><div>Esperando...</div></div>
+  </div>
+</div>
+
+<script>
+let ip = '', autoOn = true;
+
+const EMOJIS = [
+  {n:'Smiley',c:'#ffdc00',d:[[0,0,0,0,0,0,0,0],[0,1,1,0,0,1,1,0],[0,0,0,0,0,0,0,0],[0,0,1,1,1,1,0,0],[0,1,0,0,0,0,1,0],[0,0,1,0,0,1,0,0],[0,0,0,1,1,0,0,0]]},
+  {n:'Skull',c:'#fff',d:[[0,0,1,1,1,1,0,0],[0,1,0,0,0,0,1,0],[1,0,1,0,0,1,0,1],[1,0,1,0,0,1,0,1],[0,1,0,1,1,0,1,0],[0,0,1,1,1,1,0,0],[0,0,1,0,0,1,0,0],[0,1,1,1,1,1,1,0]]},
+  {n:'Ghost',c:'#c8c8ff',d:[[0,0,1,1,1,1,0,0],[0,1,0,0,0,0,1,0],[1,0,1,0,0,1,0,1],[1,0,0,0,0,0,0,1],[1,1,1,1,1,1,1,1],[1,1,0,1,1,0,1,1],[1,0,0,1,1,0,0,1]]},
+  {n:'Estrella',c:'#ffdc00',d:[[0,0,0,1,1,0,0,0],[0,0,0,1,1,0,0,0],[0,1,1,1,1,1,1,0],[1,1,1,1,1,1,1,1],[0,1,1,1,1,1,1,0],[0,0,1,1,1,1,0,0],[0,0,1,0,0,1,0,0],[0,1,0,0,0,0,1,0]]},
+  {n:'Invader',c:'#00ff64',d:[[0,0,0,1,1,0,0,0],[0,1,0,1,1,0,1,0],[0,1,0,1,1,0,1,0],[1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],[1,0,1,1,1,1,0,1],[0,0,1,0,0,1,0,0],[0,1,0,0,0,0,1,0]]},
+  {n:'Sol',c:'#ffc800',d:[[0,0,1,0,0,1,0,0],[1,0,0,1,1,0,0,1],[0,1,1,1,1,1,1,0],[0,0,1,1,1,1,0,0],[0,0,1,1,1,1,0,0],[0,1,1,1,1,1,1,0],[1,0,0,1,1,0,0,1],[0,0,1,0,0,1,0,0]]},
+  {n:'Luna',c:'#ffffb4',d:[[0,1,1,1,1,0,0,0],[1,0,0,0,1,1,0,0],[0,0,0,0,0,1,1,0],[0,0,0,0,0,0,1,0],[0,0,0,0,0,0,1,0],[0,0,0,0,0,1,1,0],[0,0,0,1,1,1,0,0]]},
+  {n:'Diamante',c:'#64c8ff',d:[[0,0,0,1,1,0,0,0],[0,0,1,0,0,1,0,0],[0,1,0,0,0,0,1,0],[1,0,1,0,0,1,0,1],[0,1,0,0,0,0,1,0],[0,0,1,0,0,1,0,0],[0,0,0,1,1,0,0,0]]},
+  {n:'Corona',c:'#ffd700',d:[[0,1,0,0,0,0,1,0],[1,1,1,0,0,1,1,1],[1,1,1,1,1,1,1,1],[0,1,1,1,1,1,1,0],[0,1,1,1,1,1,1,0],[0,0,1,1,1,1,0,0],[0,0,0,1,1,0,0,0]]},
+  {n:'Hongo',c:'#ff3232',d:[[0,0,1,1,1,1,0,0],[0,1,1,0,0,1,1,0],[1,1,0,0,0,0,1,1],[1,1,1,1,1,1,1,1],[0,0,1,1,1,1,0,0],[0,0,1,1,1,1,0,0],[0,0,1,1,1,1,0,0]]},
+  {n:'Alien',c:'#64ff64',d:[[0,0,1,1,1,1,0,0],[0,1,1,0,0,1,1,0],[1,0,0,0,0,0,0,1],[1,0,1,0,0,1,0,1],[0,1,1,1,1,1,1,0],[0,0,1,0,0,1,0,0],[0,0,1,0,0,1,0,0],[0,1,0,1,1,0,1,0]]},
+  {n:'Casa',c:'#b46432',d:[[0,0,0,1,1,1,0,0],[0,0,1,1,1,1,1,0],[0,1,1,1,1,1,1,1],[1,1,1,0,0,1,1,1],[1,1,1,0,0,1,1,1],[1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],[0,1,1,0,0,1,1,0]]},
+  {n:'Auto',c:'#ff5050',d:[[0,0,1,1,1,1,0,0],[0,1,0,0,0,0,1,0],[0,0,0,0,0,0,0,0],[1,1,1,1,1,1,1,1],[0,1,0,0,0,0,1,0],[1,1,0,1,1,0,1,1],[0,0,1,0,0,1,0,0]]},
+  {n:'Trofeo',c:'#ffc800',d:[[0,0,1,1,1,1,0,0],[0,1,1,0,0,1,1,0],[1,0,0,1,1,0,0,1],[0,0,1,0,0,1,0,0],[0,0,1,0,0,1,0,0],[0,0,1,1,1,1,0,0],[0,0,1,1,1,1,0,0],[1,1,1,1,1,1,1,1]]},
+  {n:'Paraguas',c:'#5050ff',d:[[0,1,1,1,1,1,1,0],[1,0,1,0,1,0,1,0],[1,1,1,1,1,1,1,1],[0,0,0,1,1,0,0,0],[0,0,0,1,1,0,0,0],[0,0,0,1,1,0,0,0],[0,0,1,0,0,1,0,0],[0,1,0,0,0,0,0,0]]},
+  {n:'Robot',c:'#b4b4b4',d:[[0,1,1,1,1,1,1,0],[1,0,1,0,0,1,0,1],[1,0,0,1,1,0,0,1],[0,1,1,1,1,1,1,0],[0,0,1,0,0,1,0,0],[0,1,1,0,0,1,1,0],[0,1,0,0,0,0,1,0],[0,1,1,0,0,1,1,0]]},
+  {n:'Nota',c:'#ff64c8',d:[[0,0,1,1,0,0,0,0],[0,0,1,0,1,0,0,0],[0,0,1,0,0,1,0,0],[0,0,1,0,0,1,0,0],[0,0,1,0,0,1,0,0],[0,1,1,0,0,1,0,0],[1,1,1,1,1,1,0,0],[1,1,1,1,1,1,0,0]]},
+  {n:'Pirata',c:'#fff',d:[[0,0,1,1,1,1,0,0],[0,1,0,0,0,0,1,0],[1,0,1,0,1,0,0,1],[1,0,0,0,0,0,0,1],[0,1,0,0,0,0,1,0],[0,0,1,1,1,1,0,0],[0,0,1,0,0,1,0,0],[0,1,0,1,1,0,1,0]]},
+];
+
+let current = null;
+
+function log(msg){const l=document.getElementById('log');l.innerHTML+=`<div>${new Date().toLocaleTimeString()} ${msg}</div>`;if(l.children.length>30)l.removeChild(l.firstChild);l.scrollTop=l.scrollHeight}
+
+async function send(cmd){
+  if(!ip)return log('No conectado');
+  try{await fetch(`http://${ip}/cmd`,{method:'POST',body:JSON.stringify(cmd)});log('OK: '+JSON.stringify(cmd))}catch(e){log('ERR: '+e.message)}
+}
+
+function connect(){
+  ip=document.getElementById('ipInput').value.trim();
+  log('Conectado a '+ip);
+  document.getElementById('status').textContent='● Conectado';
+  document.getElementById('status').className='status ok';
+  document.getElementById('controlPanel').style.display='';
+  document.getElementById('emojiPanel').style.display='';
+  document.getElementById('logPanel').style.display='';
+  renderGrid();
+}
+
+function setBrightness(v){
+  document.getElementById('briVal').textContent=v+'%';
+  send({t:'bri',v:parseInt(v)});
+}
+
+function toggleAuto(){
+  autoOn=!autoOn;
+  document.getElementById('autoBtn').textContent=`⏯ Auto-Cycle: ${autoOn?"ON":"OFF"}`;
+  send({t:'auto'});
+}
+
+function selectEmoji(name){
+  current=name;
+  send({t:'emoji',n:name});
+  renderGrid();
+}
+
+function renderGrid(){
+  const g=document.getElementById('emojiGrid');
+  g.innerHTML=EMOJIS.map(e=>{
+    const rows=e.d||[];
+    const h=Math.min(rows.length,7);
+    const maxW=Math.max(...rows.map(r=>r.length));
+    const cells=[];
+    for(let y=0;y<h;y++){
+      const r=rows[y]||[];
+      for(let x=0;x<maxW;x++)cells.push(`<div style="background:${r[x]?e.c:''}"></div>`);
+    }
+    return `<div class="emoji-cell${current===e.n?' active':''}" onclick="selectEmoji('${e.n}')">
+      <div class="emoji-grid-preview" style="grid-template-columns:repeat(${maxW},1fr);width:${maxW*8}px;height:${h*8}px">${cells.join('')}</div>
+      <div style="font-size:13px">${e.n}</div>
+    </div>`;
+  }).join('');
+}
+
+// Init
+window.addEventListener('DOMContentLoaded',()=>{
+  log('Listo. Ingresa la IP y presiona Conectar.');
+});
+</script></body></html>

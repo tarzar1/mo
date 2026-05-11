@@ -1,0 +1,29 @@
+{
+  "source": "https://www.youtube.com/watch?v=y8YEj1tgdWU",
+  "video_path": "C:\\Users\\tarzan-rd\\Desktop\\hola\\new_desing\\teachings\\youtube\\video.mp4",
+  "frames": 335,
+  "steps_with_ui": 2,
+  "instructions_found": 0,
+  "plan": [
+    {
+      "action": "click_text",
+      "text": "email",
+      "desc": "Click en campo Email"
+    },
+    {
+      "action": "type",
+      "text": "{EMAIL}",
+      "desc": "Escribir email"
+    },
+    {
+      "action": "click_text",
+      "text": "continue",
+      "desc": "Click en Next/Siguiente"
+    },
+    {
+      "action": "click_text",
+      "text": "Next",
+      "desc": "Click en Next/Siguiente"
+    }
+  ]
+}

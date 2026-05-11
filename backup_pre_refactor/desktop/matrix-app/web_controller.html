@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Matrix LED 8x8 — 1000 Animaciones</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,sans-serif;background:#0a1628;color:#fff;min-height:100vh}
+:root{--primary:#00d97e;--danger:#ff3b5c;--warn:#ffb800;--card:#0d1e30;--card2:#122438;--border:#1a2a3a;--muted:#4a6380}
+
+header{background:var(--card);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
+header h1{font-size:18px;background:linear-gradient(135deg,var(--primary),#0066ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.btn{padding:10px 18px;border:none;border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;transition:.2s}
+.btn-primary{background:var(--primary);color:#000}
+.btn-outline{background:transparent;border:1px solid var(--border);color:#fff}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-warn{background:var(--warn);color:#000}
+.btn-sm{padding:6px 12px;font-size:11px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+
+.status{padding:8px 14px;border-radius:20px;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+.status-ok{background:rgba(0,217,126,.15);color:var(--primary);border:1px solid rgba(0,217,126,.3)}
+.status-wait{background:rgba(255,184,0,.15);color:var(--warn);border:1px solid rgba(255,184,0,.3)}
+.status-err{background:rgba(255,59,92,.15);color:var(--danger);border:1px solid rgba(255,59,92,.3)}
+
+.container{max-width:1200px;margin:0 auto;padding:16px}
+.row{display:flex;gap:16px;flex-wrap:wrap}
+.col{flex:1;min-width:280px}
+.card{background:var(--card);border-radius:14px;padding:18px;border:1px solid var(--border);margin-bottom:12px}
+.card h3{font-size:14px;margin-bottom:12px;color:#8a9aaa}
+
+.slider-group{margin:8px 0}
+.slider-group label{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px}
+.slider-group label span{color:#fff;font-weight:600}
+input[type=range]{width:100%;height:6px;border-radius:3px;background:var(--border);appearance:none;outline:none}
+input[type=range]::-webkit-slider-thumb{appearance:none;width:20px;height:20px;border-radius:50%;background:var(--primary);cursor:pointer}
+input[type=range].speed-slider::-webkit-slider-thumb{background:var(--warn)}
+
+.btn-row{display:flex;gap:8px;margin:12px 0}
+
+.categories{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.cat{background:var(--card2);border:1px solid var(--border);padding:6px 14px;border-radius:20px;font-size:11px;cursor:pointer;transition:.2s;color:var(--muted)}
+.cat:hover,.cat.active{background:rgba(0,217,126,.15);border-color:var(--primary);color:var(--primary)}
+
+.search{width:100%;background:var(--card2);border:1px solid var(--border);padding:10px 14px;border-radius:10px;color:#fff;font-size:13px;outline:none;margin-bottom:12px}
+.search:focus{border-color:var(--primary)}
+
+.anim-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px;max-height:500px;overflow-y:auto;padding-right:4px}
+.anim-grid::-webkit-scrollbar{width:4px}
+.anim-grid::-webkit-scrollbar-track{background:var(--card2)}
+.anim-grid::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+.anim-cell{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:10px;cursor:pointer;transition:.15s;display:flex;align-items:center;gap:8px}
+.anim-cell:hover{border-color:var(--primary)}
+.anim-cell.playing{background:rgba(0,217,126,.12);border-color:var(--primary);border-width:2px}
+.anim-cell .dot{width:12px;height:12px;border-radius:3px;flex-shrink:0}
+.anim-cell .name{font-size:11px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.anim-cell .icon{font-size:12px;flex-shrink:0}
+.anim-cell.playing .icon{color:var(--primary)}
+
+#log{font-family:monospace;font-size:11px;max-height:120px;overflow-y:auto;color:var(--muted)}
+#log div{padding:2px 0}
+#log .rx{color:#66bb6a}
+#log .tx{color:#29b6f6}
+
+.connect-area{text-align:center;padding:40px 20px}
+.connect-area .bt-icon{font-size:64px;margin-bottom:16px;display:block}
+.connect-area h2{font-size:22px;margin-bottom:8px}
+.connect-area p{color:var(--muted);font-size:13px;margin-bottom:20px}
+
+.hidden{display:none!important}
+.count{font-size:12px;color:var(--muted)}
+@media(max-width:768px){.anim-grid{grid-template-columns:repeat(auto-fill,minmax(110px,1fr));max-height:350px}}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>✦ Matrix LED 8x8</h1>
+  <div id="statusBadge" class="status status-err">
+    <span>●</span> <span id="statusText">Desconectado</span>
+  </div>
+</header>
+
+<div id="scanView" class="connect-area container">
+  <span class="bt-icon">📡</span>
+  <h2>Conectar a Matrix LED</h2>
+  <p>Elige modo WiFi (HTTP) o Bluetooth (BLE)</p>
+
+  <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;align-items:center">
+    <!-- WiFi -->
+    <div style="background:var(--card);border-radius:14px;padding:20px;max-width:320px;border:2px solid var(--primary)">
+      <div style="font-size:20px;margin-bottom:8px">📶 WiFi</div>
+      <input type="text" id="wifiIP" placeholder="IP del ESP32 (ej: 192.168.1.100)"
+        style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:#fff;font-size:13px;text-align:center">
+      <button class="btn btn-primary" onclick="connectWiFi()" style="margin-top:10px;width:100%">
+        🔗 Conectar via WiFi
+      </button>
+    </div>
+
+    <!-- BLE -->
+    <div style="background:var(--card);border-radius:14px;padding:20px;max-width:320px;border:2px solid var(--border)">
+      <div style="font-size:20px;margin-bottom:8px">🔵 Bluetooth</div>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Solo Chrome/Edge. Busca "Matrix 8x8"</p>
+      <button class="btn btn-outline" onclick="connectBLE()" style="width:100%">
+        🔍 Escanear BLE
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="controlView" class="hidden container">
+  <div class="row">
+    <div class="col">
+      <div class="card">
+        <h3>🎚️ Control</h3>
+        <div class="slider-group">
+          <label>Brillo <span id="briVal">50%</span></label>
+          <input type="range" id="briSlider" min="1" max="100" value="50" oninput="updateBrightness(this.value)">
+        </div>
+        <div class="slider-group">
+          <label>Velocidad <span id="spdVal">100%</span></label>
+          <input type="range" class="speed-slider" id="spdSlider" min="10" max="300" value="100" oninput="updateSpeed(this.value)">
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-danger" onclick="sendCmd({t:'stop'})">⏹ STOP</button>
+          <button class="btn btn-warn" onclick="sendCmd({t:'clear'})">🧹 CLEAR</button>
+        </div>
+        <div id="nowPlaying" class="hidden" style="margin-top:10px;padding:10px;background:rgba(0,217,126,.1);border:1px solid rgba(0,217,126,.3);border-radius:10px">
+          <span style="color:var(--primary);font-size:12px">▶ Reproduciendo: <strong id="nowPlayingName"></strong></span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>📋 Log</h3>
+        <div id="log"><div style="color:var(--muted)">Esperando comandos...</div></div>
+      </div>
+    </div>
+
+    <div class="col" style="flex:2">
+      <div class="card">
+        <h3>🎬 1000 Animaciones <span class="count" id="animCount"></span></h3>
+        <div class="categories" id="categories"></div>
+        <input type="text" class="search" placeholder="🔍 Buscar animación..." oninput="renderGrid()" id="searchInput">
+        <div class="anim-grid" id="animGrid"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONSTANTS ===
+const SERVICE_UUID = '19b10000-e8f2-537e-4f6c-d104768a1214';
+const CHAR_UUID = '19b10001-e8f2-537e-4f6c-d104768a1214';
+const DEVICE_NAME = 'Matrix 8x8';
+
+let device = null;
+let char = null;
+let currentAnim = null;
+let selectedCategory = 'all';
+let mode = null;  // 'wifi' or 'ble'
+let wifiIP = '';
+
+// === CONNECTION ===
+function connectWiFi() {
+  const ip = document.getElementById('wifiIP').value.trim();
+  if (!ip) { log('⚠️ Ingresa la IP del ESP32',''); return; }
+  wifiIP = ip;
+  mode = 'wifi';
+  setStatus('●', 'WiFi ' + ip, 'status-ok');
+  log('📶 Conectado via WiFi a ' + ip,'rx');
+  document.getElementById('scanView').classList.add('hidden');
+  document.getElementById('controlView').classList.remove('hidden');
+}
+
+async function connectBLE() {
+  try {
+    setStatus('⏳', 'Escaneando...', 'status-wait');
+    log('🔍 Buscando Matrix 8x8 via BLE...','');
+
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{name: 'Matrix 8x8'}],
+      optionalServices: [SERVICE_UUID]
+    });
+
+    log('📱 Dispositivo encontrado, conectando...','');
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    char = await service.getCharacteristic(CHAR_UUID);
+    mode = 'ble';
+
+    setStatus('●', 'Conectado BLE', 'status-ok');
+    log('✅ Conectado BLE!','rx');
+
+    document.getElementById('scanView').classList.add('hidden');
+    document.getElementById('controlView').classList.remove('hidden');
+
+    device.addEventListener('gattserverdisconnected', () => {
+      setStatus('●', 'Desconectado', 'status-err');
+      log('🔌 BLE Desconectado','');
+      char = null;
+      mode = null;
+      currentAnim = null;
+      document.getElementById('scanView').classList.remove('hidden');
+      document.getElementById('controlView').classList.add('hidden');
+      renderGrid();
+    });
+
+  } catch(e) {
+    log('❌ Error BLE: ' + e.message,'');
+    setStatus('●', 'Error', 'status-err');
+    console.error(e);
+  }
+}
+
+async function sendCmd(cmd) {
+  if (mode === 'wifi') {
+    try {
+      const json = JSON.stringify(cmd);
+      log(`📤 [WiFi] ${json}`,'tx');
+      const resp = await fetch(`http://${wifiIP}/cmd`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: json
+      });
+      const result = await resp.text();
+      log(`📥 HTTP ${resp.status}: ${result}`,'rx');
+    } catch(e) {
+      log('❌ WiFi error: ' + e.message,'');
+    }
+    return;
+  }
+
+  if (mode === 'ble') {
+    if (!char) { log('❌ BLE no conectado',''); return; }
+    try {
+      const json = JSON.stringify(cmd);
+      const encoder = new TextEncoder();
+      const data = encoder.encode(json);
+      log(`📤 [BLE] ${json}`,'tx');
+
+      const MTU = 20;
+      for (let i = 0; i < data.length; i += MTU) {
+        await char.writeValueWithoutResponse(data.slice(i, i + MTU));
+      }
+    } catch(e) {
+      log('❌ Error BLE send: ' + e.message,'');
+    }
+    return;
+  }
+
+  log('❌ No conectado','');
+}
+
+  // Speed variations for each native (25 anims x 3 speeds = 75 more)
+  const speeds = [50, 150, 250];
+  for (const spd of speeds) {
+    for (const n of NAMES_ESP32) {
+      const cat = NATIVE_CATS[n] || 'all';
+      anims.push({
+        id: `${n}@${spd}`, name: `${n} ×${Math.round(spd/100*100)}%`,
+        type: 'speed', category: cat,
+        cmds: [{t:'spd',v:spd},{t:'anim',n:n}],
+        color: COLORS_WHEEL[anims.length % COLORS_WHEEL.length]
+      });
+    }
+  }
+
+  // Brightness variations (25 anims x 3 brightness = 75 more)
+  const bris = [25, 75, 100];
+  for (const bri of bris) {
+    for (const n of NAMES_ESP32) {
+      const cat = NATIVE_CATS[n] || 'all';
+      anims.push({
+        id: `${n}#${bri}`, name: `${n} ☀${bri}%`,
+        type: 'bri', category: cat,
+        cmds: [{t:'bri',v:bri},{t:'anim',n:n}],
+        color: COLORS_WHEEL[anims.length % COLORS_WHEEL.length]
+      });
+    }
+  }
+
+  // Procedural custom patterns (825+ more)
+  const effects = [
+    {prefix:'Damas',cat:'pattern', fn:()=>{
+      const d=[];for(let y=0;y<8;y++)for(let x=0;x<8;x++)if((x+y)%2===0)d.push([x,y,...randomColor()]);return d;
+    }},
+    {prefix:'Franja H',cat:'sweep', fn:i=>{
+      const d=[];const col=i%8;for(let y=0;y<8;y++)d.push([col,y,...randomColor()]);return d;
+    }},
+    {prefix:'Franja V',cat:'sweep', fn:i=>{
+      const d=[];const row=i%8;for(let x=0;x<8;x++)d.push([x,row,...randomColor()]);return d;
+    }},
+    {prefix:'Cruz',cat:'geometric', fn:()=>{
+      const d=[];for(let i=0;i<8;i++){d.push([i,3+i%2,...randomColor()]);d.push([3+i%2,i,...randomColor()])}return d;
+    }},
+    {prefix:'Marco',cat:'geometric', fn:()=>{
+      const d=[];for(let i=0;i<8;i++){d.push([i,0,...randomColor()]);d.push([i,7,...randomColor()]);d.push([0,i,...randomColor()]);d.push([7,i,...randomColor()])}return d;
+    }},
+    {prefix:'Puntos',cat:'particles', fn:()=>{
+      const d=[];for(let i=0;i<12;i++)d.push([Math.floor(Math.random()*8),Math.floor(Math.random()*8),...randomColor()]);return d;
+    }},
+    {prefix:'Diag L',cat:'pattern', fn:i=>{
+      const d=[];for(let x=0;x<8;x++){const y=(x+i)%8;d.push([x,y,...randomColor()]);d.push([x,(y+1)%8,...randomColor()])}return d;
+    }},
+    {prefix:'Diag R',cat:'pattern', fn:i=>{
+      const d=[];for(let x=0;x<8;x++){const y=(7-x+i)%8;d.push([x,y,...randomColor()])}return d;
+    }},
+    {prefix:'Circulo',cat:'geometric', fn:r=>{
+      const rad=r%4+1;const d=[];for(let y=0;y<8;y++)for(let x=0;x<8;x++){const dist=Math.sqrt((x-3.5)**2+(y-3.5)**2);if(Math.abs(dist-rad)<1.2)d.push([x,y,...randomColor()])}return d;
+    }},
+    {prefix:'Rombo',cat:'geometric', fn:()=>{
+      const d=[];for(let y=0;y<8;y++)for(let x=0;x<8;x++){if(Math.abs(x-3.5)+Math.abs(y-3.5)<4)d.push([x,y,...randomColor()])}return d;
+    }},
+    {prefix:'Serpiente',cat:'snake', fn:i=>{
+      const d=[];const sx=i%7,ex=(i+5)%7;for(let n=0;n<18;n++){const x=Math.round(sx+(ex-sx)*n/18);const y=Math.round(2+3*Math.sin(n/3));if(x>=0&&x<8&&y>=0&&y<8)d.push([x,y,...randomColor()])}return d;
+    }},
+    {prefix:'LluviaFX',cat:'particles', fn:()=>{
+      const d=[];for(let i=0;i<20;i++){const x=Math.floor(Math.random()*8);const y=Math.floor(Math.random()*5);d.push([x,y,...randomColor()]);}return d;
+    }},
+    {prefix:'Torre',cat:'sweep', fn:i=>{
+      const d=[];const h=(i%6)+1;for(let y=7-h;y<8;y++)for(let x=2;x<6;x++)d.push([x,y,...randomColor()]);return d;
+    }},
+    {prefix:'Escalon',cat:'pattern', fn:i=>{
+      const d=[];const off=i%8;for(let y=0;y<8;y++)for(let x=0;x<=((y+off)%8);x++)d.push([x,y,...randomColor()]);return d;
+    }},
+    {prefix:'Estrella',cat:'geometric', fn:()=>{
+      const d=[];const pts=[[3,0],[4,0],[5,2],[7,3],[7,4],[5,5],[4,7],[3,7],[2,5],[0,4],[0,3],[2,2]];for(const[x,y]of pts)d.push([x,y,...randomColor()]);return d;
+    }},
+    {prefix:'CorazonFX',cat:'pulse', fn:()=>{
+      const d=[];const shape=[[3,1],[4,1],[2,2],[5,2],[1,3],[6,3],[2,4],[5,4],[3,5],[4,5]];for(const[x,y]of shape)d.push([x,y,...randomColor()]);d.push([3,2,255,0,0]);d.push([4,2,255,0,0]);return d;
+    }},
+    {prefix:'Pixel',cat:'color', fn:()=>{
+      const d=[];for(let i=0;i<64;i++)d.push([i%8,Math.floor(i/8),...pastelColor()]);return d;
+    }},
+    {prefix:'OndaSin',cat:'waves', fn:i=>{
+      const d=[];for(let y=0;y<8;y++){const x=Math.round(3.5+3*Math.sin((y+i)*0.8));if(x>=0&&x<8)d.push([x,y,...randomColor()])}return d;
+    }},
+    {prefix:'Chispa',cat:'fire', fn:()=>{
+      const d=[];for(let i=0;i<25;i++){d.push([Math.floor(Math.random()*8),Math.floor(Math.random()*8),255,Math.floor(Math.random()*180),0]);}return d;
+    }},
+    {prefix:'Asterisco',cat:'space', fn:()=>{
+      const d=[];for(let i=0;i<16;i++){const a=Math.random()*Math.PI*2;const r=Math.random()*3;const x=Math.round(3.5+r*Math.cos(a));const y=Math.round(3.5+r*Math.sin(a));if(x>=0&&x<8&&y>=0&&y<8)d.push([x,y,...randomColor()])}return d;
+    }},
+    {prefix:'Linea',cat:'sweep', fn:i=>{
+      const d=[];const n=i%7+1;const dir=i%2;for(let j=0;j<n;j++){if(dir){d.push([j,3,...randomColor()]);d.push([j,4,...randomColor()])}else{d.push([3,j,...randomColor()]);d.push([4,j,...randomColor()])}}return d;
+    }},
+    {prefix:'Bloques',cat:'pattern', fn:i=>{
+      const d=[];const bx=(i%3)*3,by=Math.floor(i/3)%3*3;for(let y=by;y<by+3&&y<8;y++)for(let x=bx;x<bx+3&&x<8;x++)d.push([x,y,...randomColor()]);return d;
+    }},
+    {prefix:'Radar',cat:'sweep', fn:i=>{
+      const d=[];const a=(i%360)*Math.PI/180;for(let r=0;r<4;r+=0.5){const x=Math.round(3.5+r*Math.cos(a));const y=Math.round(3.5+r*Math.sin(a));if(x>=0&&x<8&&y>=0&&y<8)d.push([x,y,0,255,200])}return d;
+    }},
+    {prefix:'Gota',cat:'nature', fn:i=>{
+      const d=[];const levels=[[3,0],[3,1],[2,2],[4,2],[2,3],[4,3],[3,4],[4,4],[3,5]];for(const[x,y]of levels){if(y+i%3<8)d.push([x,y+i%3,100,149,237])}return d;
+    }},
+    {prefix:'Arco',cat:'rainbow', fn:i=>{
+      const d=[];for(let y=0;y<8;y++){const x=Math.round(3.5+4*Math.sin((y-i*0.5)*0.5));for(let dx=-1;dx<=1;dx++){const px=x+dx;if(px>=0&&px<8)d.push([px,y,...wheelColor(y*32)])}}return d;
+    }},
+  ];
+
+  const variantsPerEffect = 33; // 25 effects * 33 variants = 825
+  for (const eff of effects) {
+    for (let v = 0; v < variantsPerEffect; v++) {
+      const data = eff.prefix.startsWith('Damas') || eff.prefix.startsWith('Cruz') || eff.prefix.startsWith('Marco') ||
+                   eff.prefix.startsWith('Puntos') || eff.prefix.startsWith('Rombo') || eff.prefix.startsWith('LluviaFX') ||
+                   eff.prefix.startsWith('Estrella') || eff.prefix.startsWith('CorazonFX') || eff.prefix.startsWith('Pixel') ||
+                   eff.prefix.startsWith('Chispa') || eff.prefix.startsWith('Asterisco')
+        ? eff.fn()
+        : eff.fn(v);
+
+      anims.push({
+        id: `${eff.prefix}_${v}`,
+        name: `${eff.prefix} #${v+1}`,
+        type: 'custom', category: eff.cat,
+        cmd: {t:'custom',d:data},
+        color: COLORS_WHEEL[anims.length % COLORS_WHEEL.length]
+      });
+    }
+  }
+
+  return anims.slice(0, 1000);
+}
+
+function randomColor() {
+  const h = Math.floor(Math.random() * 256);
+  const c = wheelRGB(h);
+  return [c[0], c[1], c[2]];
+}
+
+function pastelColor() {
+  return [
+    128+Math.floor(Math.random()*127),
+    128+Math.floor(Math.random()*127),
+    128+Math.floor(Math.random()*127)
+  ];
+}
+
+function wheelColor(pos) {
+  const c = wheelRGB(pos % 256);
+  return [c[0], c[1], c[2]];
+}
+
+function wheelRGB(pos) {
+  pos = pos % 256;
+  if (pos < 85) return [255 - pos * 3, pos * 3, 0];
+  else if (pos < 170) { pos -= 85; return [0, 255 - pos * 3, pos * 3]; }
+  else { pos -= 170; return [pos * 3, 0, 255 - pos * 3]; }
+}
+
+// === GENERATE ALL 1000 ===
+const ALL_ANIMATIONS = generateAnimations();
+
+// === UI ===
+function renderCategories() {
+  const el = document.getElementById('categories');
+  el.innerHTML = CATEGORIES.map(c =>
+    `<div class="cat ${c.id===selectedCategory?'active':''}" onclick="selectCategory('${c.id}')">${c.icon} ${c.name}</div>`
+  ).join('');
+}
+
+function selectCategory(id) {
+  selectedCategory = id;
+  document.getElementById('searchInput').value = '';
+  renderCategories();
+  renderGrid();
+}
+
+function renderGrid() {
+  const search = (document.getElementById('searchInput').value || '').toLowerCase();
+  let filtered = ALL_ANIMATIONS;
+  if (selectedCategory !== 'all') filtered = filtered.filter(a => a.category === selectedCategory);
+  if (search) filtered = filtered.filter(a => a.name.toLowerCase().includes(search));
+
+  document.getElementById('animCount').textContent = `(${filtered.length})`;
+
+  const grid = document.getElementById('animGrid');
+  grid.innerHTML = filtered.slice(0, 200).map(a => {
+    const playing = currentAnim === a.id;
+    return `
+      <div class="anim-cell ${playing?'playing':''}" onclick="playAnimation('${a.id}')" title="${a.type}: ${a.name}">
+        <div class="dot" style="background:${a.color}"></div>
+        <div class="name">${a.name}</div>
+        <div class="icon">${playing?'▶':'▶'}</div>
+      </div>`;
+  }).join('');
+
+  if (filtered.length === 0) {
+    grid.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);grid-column:1/-1">No se encontraron animaciones</div>';
+  }
+  if (filtered.length > 200) {
+    grid.innerHTML += `<div style="padding:12px;text-align:center;color:var(--muted);grid-column:1/-1;font-size:11px">Mostrando 200 de ${filtered.length}. Usa la búsqueda para filtrar.</div>`;
+  }
+}
+
+function playAnimation(id) {
+  const anim = ALL_ANIMATIONS.find(a => a.id === id);
+  if (!anim) return;
+
+  currentAnim = id;
+  document.getElementById('nowPlaying').classList.remove('hidden');
+  document.getElementById('nowPlayingName').textContent = anim.name;
+
+  if (anim.cmds) {
+    for (const cmd of anim.cmds) sendCmd(cmd);
+  } else if (anim.cmd) {
+    sendCmd(anim.cmd);
+  }
+  renderGrid();
+}
+
+// === BLE ===
+function log(msg, type) {
+  const el = document.getElementById('log');
+  const color = type === 'rx' ? '#66bb6a' : type === 'tx' ? '#29b6f6' : 'var(--muted)';
+  el.innerHTML += `<div style="color:${color}">${new Date().toLocaleTimeString()} ${msg}</div>`;
+  if (el.children.length > 30) el.removeChild(el.firstChild);
+  el.scrollTop = el.scrollHeight;
+}
+
+function setStatus(icon, text, cls) {
+  document.getElementById('statusBadge').className = 'status ' + cls;
+  document.getElementById('statusText').textContent = icon + ' ' + text;
+}
+
+async function connect() {
+  try {
+    setStatus('⏳', 'Escaneando...', 'status-wait');
+    log('🔍 Buscando Matrix 8x8...','');
+
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{name: 'Matrix 8x8'}],
+      optionalServices: [SERVICE_UUID]
+    });
+
+    log('📱 Dispositivo encontrado, conectando...','');
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    char = await service.getCharacteristic(CHAR_UUID);
+
+    setStatus('●', 'Conectado', 'status-ok');
+    log('✅ Conectado! Listo para enviar animaciones.','rx');
+
+    document.getElementById('scanView').classList.add('hidden');
+    document.getElementById('controlView').classList.remove('hidden');
+
+    device.addEventListener('gattserverdisconnected', () => {
+      setStatus('●', 'Desconectado', 'status-err');
+      log('🔌 Desconectado','');
+      char = null;
+      currentAnim = null;
+      document.getElementById('scanView').classList.remove('hidden');
+      document.getElementById('controlView').classList.add('hidden');
+      renderGrid();
+    });
+
+  } catch(e) {
+    log('❌ Error: ' + e.message,'');
+    setStatus('●', 'Error', 'status-err');
+    console.error(e);
+  }
+}
+
+async function sendCmd(cmd) {
+  if (!char) { log('❌ No conectado',''); return; }
+  try {
+    const json = JSON.stringify(cmd);
+    const encoder = new TextEncoder();
+    const data = encoder.encode(json);
+    log(`📤 ${json}`,'tx');
+
+    const MTU = 20;
+    for (let i = 0; i < data.length; i += MTU) {
+      await char.writeValueWithoutResponse(data.slice(i, i + MTU));
+    }
+  } catch(e) {
+    log('❌ Error send: ' + e.message,'');
+  }
+}
+
+function updateBrightness(v) {
+  document.getElementById('briVal').textContent = v + '%';
+  sendCmd({t:'bri',v:parseInt(v)});
+}
+
+function updateSpeed(v) {
+  document.getElementById('spdVal').textContent = v + '%';
+  sendCmd({t:'spd',v:parseInt(v)});
+}
+
+// === INIT ===
+renderCategories();
+renderGrid();
+setStatus('●', 'Desconectado', 'status-err');
+</script>
+</body>
+</html>

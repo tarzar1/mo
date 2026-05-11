@@ -1,0 +1,30 @@
+{
+  "name": "instalar_gta5_repack",
+  "source": "youtube",
+  "url": "https://www.youtube.com/watch?v=JExyha6Jb48",
+  "description": "Instalar GTA V desde repack (fitgirl) - aprendido de video tutorial",
+  "plan": [
+    {"step": 1, "action": "run", "app": "explorer", "desc": "Abrir carpeta de descargas"},
+    {"step": 2, "action": "click_text", "text": "Setup", "desc": "Ejecutar setup de GTA V"},
+    {"step": 3, "action": "wait", "ms": 3000, "desc": "Esperar Windows SmartScreen"},
+    {"step": 4, "action": "click_text", "text": "Run", "desc": "Click Run anyway si aparece warning"},
+    {"step": 5, "action": "wait", "ms": 2000, "desc": "Esperar Wizard"},
+    {"step": 6, "action": "click_text", "text": "Next", "desc": "Click Next en Setup Wizard"},
+    {"step": 7, "action": "wait", "ms": 1000},
+    {"step": 8, "action": "click_text", "text": "Next", "desc": "Click Next en informacion"},
+    {"step": 9, "action": "wait", "ms": 1000},
+    {"step": 10, "action": "click_text", "text": "Browse", "desc": "Seleccionar carpeta destino"},
+    {"step": 11, "action": "wait", "ms": 1500},
+    {"step": 12, "action": "click_text", "text": "Next", "desc": "Confirmar destino"},
+    {"step": 13, "action": "wait", "ms": 1000},
+    {"step": 14, "action": "click_text", "text": "Next", "desc": "Click Next en componentes"},
+    {"step": 15, "action": "wait", "ms": 1000},
+    {"step": 16, "action": "click_text", "text": "Install", "desc": "Click Install"},
+    {"step": 17, "action": "wait", "ms": 60000, "desc": "Esperar instalacion (largo)"},
+    {"step": 18, "action": "click_text", "text": "Finish", "desc": "Click Finish al terminar"},
+    {"step": 19, "action": "wait", "ms": 3000},
+    {"step": 20, "action": "click_text", "text": "Next", "desc": "Instalar DirectX"},
+    {"step": 21, "action": "wait", "ms": 1000},
+    {"step": 22, "action": "click_text", "text": "Finish", "desc": "Completar DirectX"}
+  ]
+}

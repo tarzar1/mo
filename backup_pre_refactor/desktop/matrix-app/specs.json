@@ -1,0 +1,125 @@
+{
+  "project": "matrix_led_ble",
+  "description": "Matrix LED 8x8 BLE Controller - Clean Architecture",
+  "architecture": {
+    "layers": ["domain", "data", "presentation"],
+    "state_management": "Riverpod 2.x (StateNotifier + providers)",
+    "ble_library": "flutter_blue_plus 1.x",
+    "targets": ["android", "ios", "windows"]
+  },
+  "domain": {
+    "entities": {
+      "Animation": {
+        "fields": ["name: String", "colors: List<int>"],
+        "path": "features/matrix_control/domain/entities/animation.dart"
+      },
+      "MatrixDevice": {
+        "fields": ["id: String", "name: String", "connected: bool"],
+        "path": "features/matrix_control/domain/entities/matrix_device.dart"
+      },
+      "MatrixState": {
+        "fields": ["brightness: int", "speed: int", "currentAnim: String?", "connectionState: BleConnState"],
+        "path": "features/matrix_control/domain/entities/matrix_state.dart"
+      }
+    },
+    "repositories": {
+      "MatrixRepository": {
+        "methods": {
+          "scanDevices": "Future<List<MatrixDevice>> scan({int seconds})",
+          "connect": "Future<bool> connect(MatrixDevice device)",
+          "disconnect": "Future<void> disconnect()",
+          "sendAnimation": "void sendAnimation(String name)",
+          "setBrightness": "void setBrightness(int v)",
+          "setSpeed": "void setSpeed(int v)",
+          "stop": "void stop()",
+          "clear": "void clear()",
+          "connectionStream": "Stream<BleConnState> get connectionStream"
+        },
+        "path": "features/matrix_control/domain/repositories/matrix_repository.dart"
+      }
+    },
+    "usecases": {
+      "ScanDevices": "call() -> Future<List<MatrixDevice>>",
+      "ConnectDevice": "call(MatrixDevice) -> Future<bool>",
+      "SendAnimation": "call(String name) -> void",
+      "SetBrightness": "call(int v) -> void",
+      "SetSpeed": "call(int v) -> void",
+      "StopAnimation": "call() -> void",
+      "ClearMatrix": "call() -> void"
+    }
+  },
+  "data": {
+    "datasources": {
+      "MatrixBleDataSource": {
+        "path": "features/matrix_control/data/datasources/matrix_ble_datasource.dart"
+      }
+    },
+    "repositories": {
+      "MatrixRepositoryImpl": {
+        "implements": "MatrixRepository",
+        "path": "features/matrix_control/data/repositories/matrix_repository_impl.dart"
+      }
+    }
+  },
+  "presentation": {
+    "providers": {
+      "path": "features/matrix_control/presentation/providers/matrix_provider.dart",
+      "providers": [
+        "connectionStateProvider: StateNotifierProvider",
+        "brightnessProvider: StateProvider<int>",
+        "speedProvider: StateProvider<int>",
+        "currentAnimProvider: StateProvider<String?>",
+        "animationsProvider: Provider<List<Animation>>",
+        "scanResultsProvider: StateProvider<List<MatrixDevice>>"
+      ]
+    },
+    "screens": {
+      "scan": "features/matrix_control/presentation/screens/scan_screen.dart",
+      "control": "features/matrix_control/presentation/screens/control_screen.dart"
+    },
+    "widgets": {
+      "connection_status": "features/matrix_control/presentation/widgets/connection_status.dart",
+      "anim_grid": "features/matrix_control/presentation/widgets/anim_grid.dart",
+      "sliders": "features/matrix_control/presentation/widgets/matrix_sliders.dart"
+    }
+  },
+  "ble_protocol": {
+    "service_uuid": "19b10000-e8f2-537e-4f6c-d104768a1214",
+    "char_uuid": "19b10001-e8f2-537e-4f6c-d104768a1214",
+    "device_name": "Matrix 8x8",
+    "commands": {
+      "anim": {"t": "anim", "n": "<name>"},
+      "bri": {"t": "bri", "v": "<1-100>"},
+      "spd": {"t": "spd", "v": "<10-300>"},
+      "stop": {"t": "stop"},
+      "clear": {"t": "clear"}
+    }
+  },
+  "animations": [
+    {"name": "Arcoiris", "colors": ["0xFF00D97E", "0xFF0066FF"]},
+    {"name": "Ola de colores", "colors": ["0xFF29B6F6", "0xFF006994"]},
+    {"name": "Lluvia", "colors": ["0xFF42A5F5", "0xFF1E88E5"]},
+    {"name": "Corazon", "colors": ["0xFFFF3B5C", "0xFFD50000"]},
+    {"name": "Snake", "colors": ["0xFF66BB6A", "0xFF388E3C"]},
+    {"name": "Explosion", "colors": ["0xFFFF7043", "0xFFFFB74D"]},
+    {"name": "Espiral", "colors": ["0xFF9C6FFF", "0xFF00BCD4"]},
+    {"name": "Fuego / Plasma", "colors": ["0xFFFF5722", "0xFFFF9800"]},
+    {"name": "VU Meter", "colors": ["0xFF00E676", "0xFF00C853"]},
+    {"name": "Cubo 3D", "colors": ["0xFF448AFF", "0xFF304FFE"]},
+    {"name": "Estrella fugaz", "colors": ["0xFFFFD740", "0xFFFFAB00"]},
+    {"name": "Torbellino", "colors": ["0xFFE040FB", "0xFFAA00FF"]},
+    {"name": "Ondas", "colors": ["0xFF00BCD4", "0xFF0097A7"]},
+    {"name": "Ajedrez", "colors": ["0xFF78909C", "0xFF607D8B"]},
+    {"name": "Escalera", "colors": ["0xFF8D6E63", "0xFF6D4C41"]},
+    {"name": "Pacman", "colors": ["0xFFFFEB3B", "0xFFFBC02D"]},
+    {"name": "Game of Life", "colors": ["0xFF00E676", "0xFF69F0AE"]},
+    {"name": "Navidad", "colors": ["0xFFF44336", "0xFF2E7D32"]},
+    {"name": "Pixel x Pixel", "colors": ["0xFFFF80AB", "0xFFF50057"]},
+    {"name": "Sweep H", "colors": ["0xFFB0BEC5", "0xFF90A4AE"]},
+    {"name": "Sweep V", "colors": ["0xFFCFD8DC", "0xFFB0BEC5"]},
+    {"name": "Morse", "colors": ["0xFFFFD740", "0xFFFFC107"]},
+    {"name": "Caos", "colors": ["0xFFFF5252", "0xFFFF1744"]},
+    {"name": "Rebote", "colors": ["0xFF00E5FF", "0xFF00B8D4"]},
+    {"name": "Ruleta", "colors": ["0xFFFF6E40", "0xFFFF3D00"]}
+  ]
+}

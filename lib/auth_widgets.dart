@@ -153,12 +153,12 @@ class _LoginViewState extends State<_LoginViewContent> {
             secondary: secondary,
           ).animate().fadeIn(duration: 400.ms, delay: 700.ms).slideY(begin: 0.2),
           const SizedBox(height: 20),
-          GestureDetector(
+          BouncingWidget(
             onTap: widget.onSwitch,
             child: RichText(
               text: TextSpan(
                 text: '¿No tienes cuenta? ',
-                style: TextStyle(color: subColor),
+                style: TextStyle(color: subColor, fontSize: 15),
                 children: [
                   TextSpan(
                     text: 'Regístrate',
@@ -167,7 +167,7 @@ class _LoginViewState extends State<_LoginViewContent> {
                 ],
               ),
             ),
-          ).animate().fadeIn(duration: 400.ms, delay: 800.ms),
+          ).animate().fadeIn(duration: 800.ms).slideY(begin: 0.5),
           const SizedBox(height: 30),
         ],
       ),
@@ -391,7 +391,7 @@ class _SignupViewState extends State<_SignupViewContent> {
           // Role selector
           Container(
             decoration: BoxDecoration(
-              color: isDark ? Colors.white.withOpacity(0.07) : Colors.black.withOpacity(0.05),
+              color: isDark ? Colors.white.withValues(alpha: 0.07) : Colors.black.withValues(alpha: 0.05),
               borderRadius: BorderRadius.circular(30),
             ),
             padding: const EdgeInsets.all(4),
@@ -467,12 +467,12 @@ class _SignupViewState extends State<_SignupViewContent> {
             secondary: secondary,
           ).animate().fadeIn(duration: 400.ms, delay: 800.ms).slideY(begin: 0.2),
           const SizedBox(height: 20),
-          GestureDetector(
+          BouncingWidget(
             onTap: widget.onSwitch,
             child: RichText(
               text: TextSpan(
                 text: '¿Ya tienes cuenta? ',
-                style: TextStyle(color: subColor),
+                style: TextStyle(color: subColor, fontSize: 15),
                 children: [
                   TextSpan(
                       text: 'Inicia sesión',
@@ -481,7 +481,7 @@ class _SignupViewState extends State<_SignupViewContent> {
                 ],
               ),
             ),
-          ).animate().fadeIn(duration: 400.ms, delay: 900.ms),
+          ).animate().fadeIn(delay: 900.ms).slideY(begin: 0.5),
           const SizedBox(height: 30),
         ],
       ),
@@ -491,15 +491,15 @@ class _SignupViewState extends State<_SignupViewContent> {
   Widget _roleBtn(int index, IconData icon, String text, Color primary, Color subColor, bool isDark) {
     final active = _role == index;
     return Expanded(
-      child: GestureDetector(
+      child: BouncingWidget(
         onTap: () => setState(() => _role = index),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: active ? primary.withOpacity(0.15) : Colors.transparent,
+            color: active ? primary.withValues(alpha: 0.15) : Colors.transparent,
             borderRadius: BorderRadius.circular(26),
-            border: active ? Border.all(color: primary.withOpacity(0.5)) : null,
+            border: active ? Border.all(color: primary.withValues(alpha: 0.5)) : null,
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -539,15 +539,15 @@ class _ThemeToggleBtn extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return GestureDetector(
+    return BouncingWidget(
       onTap: () => ref.read(themeModeProvider.notifier).toggle(),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: primary.withOpacity(0.12),
+          color: primary.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: primary.withOpacity(0.2)),
+          border: Border.all(color: primary.withValues(alpha: 0.2)),
         ),
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 300),
@@ -574,10 +574,10 @@ class GlowIcon extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: primary.withOpacity(0.12),
+        color: primary.withValues(alpha: 0.12),
         boxShadow: [
           BoxShadow(
-              color: primary.withOpacity(0.3), blurRadius: 30, spreadRadius: 2),
+              color: primary.withValues(alpha: 0.3), blurRadius: 30, spreadRadius: 2),
         ],
       ),
       child: Icon(icon, color: primary, size: 34),
@@ -608,8 +608,8 @@ class GlowInput extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bgColor = isDark
-        ? Colors.white.withOpacity(0.06)
-        : Colors.black.withOpacity(0.05);
+        ? Colors.white.withValues(alpha: 0.06)
+        : Colors.black.withValues(alpha: 0.05);
     final borderColor = isDark ? Colors.white12 : Colors.black12;
     final textColor = isDark ? Colors.white : const Color(0xFF0D1E30);
     final hintColor = isDark ? Colors.white38 : Colors.black38;
@@ -710,7 +710,7 @@ class _GradientButtonState extends State<GradientButton>
               ),
               boxShadow: [
                 BoxShadow(
-                    color: widget.primary.withOpacity(0.25),
+                    color: widget.primary.withValues(alpha: 0.25),
                     blurRadius: 20,
                     offset: const Offset(0, 6)),
               ],

@@ -4,12 +4,26 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'theme.dart';
 import 'providers.dart';
 import 'driver_api_service.dart';
+import 'notification_screen.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(tripsProvider.notifier).loadTrips();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final isDark = ref.watch(themeModeProvider) == ThemeMode.dark;
     final appTheme = ref.watch(appThemeProvider);
     final trips = ref.watch(tripsProvider);
@@ -157,7 +171,7 @@ class HomeScreen extends ConsumerWidget {
                               shape: BoxShape.circle,
                               boxShadow: [
                                 BoxShadow(
-                                    color: primary.withOpacity(0.5),
+                                    color: primary.withValues(alpha: 0.5),
                                     blurRadius: 20,
                                     spreadRadius: 4),
                               ],
@@ -175,7 +189,7 @@ class HomeScreen extends ConsumerWidget {
                               borderRadius: BorderRadius.circular(20),
                               boxShadow: [
                                 BoxShadow(
-                                    color: Colors.black.withOpacity(0.1),
+                                    color: Colors.black.withValues(alpha: 0.1),
                                     blurRadius: 10)
                               ],
                             ),
@@ -284,7 +298,7 @@ class HomeScreen extends ConsumerWidget {
                       .animate()
                       .fadeIn(duration: 400.ms, delay: 500.ms),
                   const Spacer(),
-                  GestureDetector(
+                  BouncingWidget(
                     onTap: () =>
                         ref.read(bottomNavIndexProvider.notifier).state = 1,
                     child: Text('Ver todos',
@@ -306,7 +320,7 @@ class HomeScreen extends ConsumerWidget {
                     .where((t) => t.status == TripStatus.available)
                     .take(3)
                     .toList()[i];
-                return GestureDetector(
+                return BouncingWidget(
                   onTap: () => _showTripDetails(context, ref, trip),
                   child: _TripPreviewCard(
                       trip: trip,
@@ -392,7 +406,7 @@ class HomeScreen extends ConsumerWidget {
                     labelStyle: TextStyle(color: subColor),
                     prefixIcon: Icon(Icons.location_on_outlined, color: subColor),
                     filled: true,
-                    fillColor: isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFF0F4F8),
+                    fillColor: isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF0F4F8),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
@@ -405,7 +419,7 @@ class HomeScreen extends ConsumerWidget {
                     labelStyle: TextStyle(color: subColor),
                     prefixIcon: Icon(Icons.location_searching_outlined, color: subColor),
                     filled: true,
-                    fillColor: isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFF0F4F8),
+                    fillColor: isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF0F4F8),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
@@ -422,7 +436,7 @@ class HomeScreen extends ConsumerWidget {
                           labelStyle: TextStyle(color: subColor),
                           prefixIcon: Icon(Icons.access_time, color: subColor),
                           filled: true,
-                          fillColor: isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFF0F4F8),
+                          fillColor: isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF0F4F8),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
@@ -438,7 +452,7 @@ class HomeScreen extends ConsumerWidget {
                           labelStyle: TextStyle(color: subColor),
                           prefixIcon: Icon(Icons.timer_outlined, color: subColor),
                           filled: true,
-                          fillColor: isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFF0F4F8),
+                          fillColor: isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF0F4F8),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
@@ -459,7 +473,7 @@ class HomeScreen extends ConsumerWidget {
                           prefixText: '\$ ',
                           prefixStyle: TextStyle(color: textColor),
                           filled: true,
-                          fillColor: isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFF0F4F8),
+                          fillColor: isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF0F4F8),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
@@ -475,7 +489,7 @@ class HomeScreen extends ConsumerWidget {
                           labelStyle: TextStyle(color: subColor),
                           prefixIcon: Icon(Icons.event_seat_outlined, color: subColor),
                           filled: true,
-                          fillColor: isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFF0F4F8),
+                          fillColor: isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF0F4F8),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
@@ -495,7 +509,7 @@ class HomeScreen extends ConsumerWidget {
                           labelStyle: TextStyle(color: subColor),
                           prefixIcon: Icon(Icons.directions_car, color: subColor),
                           filled: true,
-                          fillColor: isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFF0F4F8),
+                          fillColor: isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF0F4F8),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
@@ -511,7 +525,7 @@ class HomeScreen extends ConsumerWidget {
                           labelStyle: TextStyle(color: subColor),
                           prefixIcon: Icon(Icons.confirmation_number, color: subColor),
                           filled: true,
-                          fillColor: isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFF0F4F8),
+                          fillColor: isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF0F4F8),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
@@ -521,8 +535,8 @@ class HomeScreen extends ConsumerWidget {
                 SizedBox(height: 20),
                 SizedBox(
                   width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: loading
+                  child: BouncingWidget(
+                    onTap: loading
                         ? null
                         : () async {
                             if (originCtrl.text.trim().isEmpty ||
@@ -564,15 +578,17 @@ class HomeScreen extends ConsumerWidget {
                               if (ctx.mounted) setSheetState(() => loading = false);
                             }
                           },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primary,
-                      foregroundColor: Colors.white,
+                    child: Container(
+                      width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
+                      decoration: BoxDecoration(
+                        color: primary,
                         borderRadius: BorderRadius.circular(12),
                       ),
+                      alignment: Alignment.center,
+                      child: Text(loading ? 'Publicando...' : 'Publicar viaje',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                     ),
-                    child: Text(loading ? 'Publicando...' : 'Publicar viaje'),
                   ),
                 ),
               ],
@@ -725,6 +741,9 @@ class HomeScreen extends ConsumerWidget {
     final textColor = getModalTextColor(ref);
     final subColor = getModalTextSecondaryColor(ref);
     final primary = getModalPrimaryColor(ref);
+    final user = ref.read(userProfileProvider);
+
+    final isMyOffer = trip.driverId == user.id;
 
     showModalBottomSheet(
       context: context,
@@ -732,7 +751,7 @@ class HomeScreen extends ConsumerWidget {
       backgroundColor: bgColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => Padding(
+      builder: (ctx) => Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -754,7 +773,7 @@ class HomeScreen extends ConsumerWidget {
             Row(
               children: [
                 CircleAvatar(
-                  backgroundColor: primary.withOpacity( 0.1),
+                  backgroundColor: primary.withValues(alpha:  0.1),
                   child: Text(trip.driverAvatar,
                       style: TextStyle(
                           fontWeight: FontWeight.bold, color: primary)),
@@ -814,29 +833,42 @@ class HomeScreen extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
-                  ref.read(tripsProvider.notifier).joinTrip(trip.id);
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Te has unido al viaje ✅'),
-                      backgroundColor: Colors.green,
+            if (isMyOffer)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    try {
+                      await ref.read(driverApiProvider).deleteOffer(trip.id);
+                      await ref.read(tripsProvider.notifier).loadTrips();
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Viaje eliminado 🗑️'),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                    } catch (e) {
+                      if (!context.mounted) return;
+                      final msg = e is ApiException ? e.message : 'Error al eliminar';
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(msg), backgroundColor: Colors.red),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  label: const Text('Eliminar viaje'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF3B5C),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: const Text('Unirse al viaje')),
-            ),
+              ),
           ],
         ),
       ),
@@ -860,8 +892,8 @@ class _NotificationIcon extends StatelessWidget {
     final notifications = ref.watch(notificationsProvider);
     final hasUnread = notifications.any((n) => !n.isRead);
 
-    return GestureDetector(
-      onTap: () => ref.read(bottomNavIndexProvider.notifier).state = 5,
+    return BouncingWidget(
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationScreen())),
       child: Container(
         width: 40,
         height: 40,
@@ -1060,7 +1092,7 @@ class _TripPreviewCard extends StatelessWidget {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: primary.withOpacity(0.1),
+              color: primary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(Icons.directions_car, color: primary),

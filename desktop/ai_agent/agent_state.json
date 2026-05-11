@@ -1,0 +1,85 @@
+{
+  "task": "abre notepad y escribe Hola Gola probando foco v3",
+  "step": 5,
+  "status": "done",
+  "mode": "autonomous",
+  "history": [
+    {
+      "step": 1,
+      "action": {
+        "action": "open_app",
+        "app": "notepad",
+        "desc": "Abrir notepad"
+      },
+      "result": {
+        "ok": true,
+        "tried": [],
+        "action": "open_app",
+        "strategy": "start_menu"
+      }
+    },
+    {
+      "step": 2,
+      "action": {
+        "action": "wait",
+        "ms": 2000
+      },
+      "result": {
+        "ok": true,
+        "tried": [],
+        "action": "wait"
+      }
+    },
+    {
+      "step": 3,
+      "action": {
+        "action": "verify_focus",
+        "app": [
+          "notepad",
+          "bloc de notas",
+          "sin titulo",
+          "untitled"
+        ],
+        "desc": "Verificar notepad"
+      },
+      "result": {
+        "ok": false,
+        "tried": [],
+        "action": "verify_focus",
+        "focus_result": {
+          "focused": false,
+          "attempts": 5
+        }
+      }
+    },
+    {
+      "step": 4,
+      "action": {
+        "action": "click_text",
+        "text": "notepad",
+        "desc": "Click en notepad"
+      },
+      "result": {
+        "ok": true,
+        "tried": [],
+        "action": "click_text",
+        "found": "notepad",
+        "x": 336,
+        "y": 772,
+        "strategy": "ocr_exact"
+      }
+    },
+    {
+      "step": 5,
+      "action": {
+        "action": "wait",
+        "ms": 300
+      },
+      "result": {
+        "ok": true,
+        "tried": [],
+        "action": "wait"
+      }
+    }
+  ]
+}

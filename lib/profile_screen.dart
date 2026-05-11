@@ -1,13 +1,24 @@
+import 'dart:io' show File;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'theme.dart';
 import 'providers.dart';
+import 'wallet_screen.dart';
 
-class ProfileScreen extends ConsumerWidget {
+class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+  bool _isUploading = false;
+
+  @override
+  Widget build(BuildContext context) {
     final isDark = ref.watch(themeModeProvider) == ThemeMode.dark;
     final appTheme = ref.watch(appThemeProvider);
     final user = ref.watch(userProfileProvider);
@@ -61,7 +72,7 @@ class ProfileScreen extends ConsumerWidget {
                           child: Container(
                             padding: const EdgeInsets.all(10),
                             decoration: BoxDecoration(
-                              color: primary.withOpacity( 0.1),
+                              color: primary.withValues(alpha:  0.1),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Icon(Icons.edit_outlined,
@@ -72,92 +83,93 @@ class ProfileScreen extends ConsumerWidget {
                     ],
                   ),
                   const SizedBox(height: 24),
-                  // Avatar with role badge
-                  Stack(
-                    children: [
-                      Container(
-                        width: 88,
-                        height: 88,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: AppThemes.gradientColors(appTheme),
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
+                  // Avatar with edit overlay
+                  GestureDetector(
+                    onTap: () => _showAvatarOptions(context, ref, user, isDark, appTheme),
+                    child: Stack(
+                      children: [
+                        Container(
+                          width: 96,
+                          height: 96,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                  color: primary.withValues(alpha:  0.4),
+                                  blurRadius: 20,
+                                  spreadRadius: 2),
+                            ],
                           ),
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                                color: primary.withOpacity( 0.4),
-                                blurRadius: 20,
-                                spreadRadius: 2),
-                          ],
-                        ),
-                        child: Center(
-                          child: Text(
-                            user.name.isNotEmpty
-                                ? user.name
-                                    .split(' ')
-                                    .where((p) => p.isNotEmpty)
-                                    .map((p) => p[0])
-                                    .take(2)
-                                    .join()
-                                : '?',
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 28,
-                                fontWeight: FontWeight.bold),
+                          child: CircleAvatar(
+                            radius: 48,
+                            backgroundColor: primary.withValues(alpha:  0.15),
+                            backgroundImage: user.avatar.startsWith('http')
+                                ? CachedNetworkImageProvider(user.avatar) as ImageProvider
+                                : user.avatarLocalPath.isNotEmpty
+                                    ? FileImage(File(user.avatarLocalPath)) as ImageProvider
+                                    : null,
+                            child: user.avatar.isEmpty && user.avatarLocalPath.isEmpty
+                                ? Text(
+                                    user.name.isNotEmpty
+                                        ? user.name
+                                            .split(' ')
+                                            .where((p) => p.isNotEmpty)
+                                            .map((p) => p[0])
+                                            .take(2)
+                                            .join()
+                                        : '?',
+                                    style: TextStyle(
+                                        color: primary,
+                                        fontSize: 30,
+                                        fontWeight: FontWeight.bold),
+                                  )
+                                : null,
                           ),
                         ),
-                      ),
-                      if (user.isVerified)
+                        // Camera overlay
                         Positioned(
-                          bottom: 2,
-                          right: 2,
+                          bottom: 0,
+                          right: 0,
                           child: Container(
-                            padding: const EdgeInsets.all(4),
+                            width: 32,
+                            height: 32,
                             decoration: BoxDecoration(
                               color: primary,
                               shape: BoxShape.circle,
-                              border:
-                                  Border.all(color: card, width: 2),
+                              border: Border.all(color: card, width: 2),
                             ),
-                            child: const Icon(Icons.verified,
-                                color: Colors.white, size: 12),
+                            child: _isUploading
+                                ? const Padding(
+                                    padding: EdgeInsets.all(6),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.camera_alt,
+                                    color: Colors.white, size: 16),
                           ),
                         ),
-                      // Role badge
-                      Positioned(
-                        top: 2,
-                        right: 2,
-                        child: GestureDetector(
-                          onTap: () =>
-                              _showRoleSwitch(context, ref, user, isDark, appTheme),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: secondary,
-                              borderRadius: BorderRadius.circular(12),
-                              border:
-                                  Border.all(color: card, width: 2),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(user.roleIcon,
-                                    color: Colors.white, size: 10),
-                                const SizedBox(width: 4),
-                                Text(user.roleLabel,
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.bold)),
-                              ],
+                        if (user.isVerified)
+                        // Role badge
+                          Positioned(
+                            bottom: 0,
+                            left: 0,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: primary,
+                                shape: BoxShape.circle,
+                                border:
+                                    Border.all(color: card, width: 2),
+                              ),
+                              child: const Icon(Icons.verified,
+                                  color: Colors.white, size: 12),
                             ),
                           ),
-                        ),
-                      ),
-                    ],
+                       
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 14),
                   Text(user.name,
@@ -185,11 +197,11 @@ class ProfileScreen extends ConsumerWidget {
                             horizontal: 14, vertical: 6),
                         decoration: BoxDecoration(
                           color: const Color(0xFFFFB800)
-                              .withOpacity( 0.12),
+                              .withValues(alpha:  0.12),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
                               color: const Color(0xFFFFB800)
-                                  .withOpacity( 0.3)),
+                                  .withValues(alpha:  0.3)),
                         ),
                         child: const Row(
                           mainAxisSize: MainAxisSize.min,
@@ -280,6 +292,71 @@ class ProfileScreen extends ConsumerWidget {
                     label: 'Teléfono',
                     value: user.phone),
               ],
+            ),
+          ),
+
+          // Wallet section
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+              child: Text('Billetera',
+                  style: TextStyle(
+                      color: textSec,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.8)),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const WalletScreen()),
+              ),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: card,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: border),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: AppThemes.gradientColors(appTheme),
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(Icons.wallet_rounded,
+                          color: Colors.white, size: 22),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Mi Billetera',
+                              style: TextStyle(
+                                  color: textPri,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 2),
+                          Text('Saldo y métodos de pago',
+                              style: TextStyle(
+                                  color: textSec, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right_rounded,
+                        color: textSec, size: 20),
+                  ],
+                ),
+              ),
             ),
           ),
 
@@ -457,15 +534,7 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
-  void _showRoleSwitch(
-    BuildContext context,
-    WidgetRef ref,
-    UserProfile user,
-    bool isDark,
-    AppThemeVariant appTheme,
-  ) {
-    final primary = AppThemes.primaryColor(appTheme, isDark);
-    final secondary = AppThemes.secondaryColor(appTheme);
+  void _showAvatarOptions(BuildContext context, WidgetRef ref, UserProfile user, bool isDark, AppThemeVariant appTheme) {
     final bgColor = isDark
         ? AppThemes.getTheme(appTheme, Brightness.dark).cardColor
         : AppThemes.getTheme(appTheme, Brightness.light).cardColor;
@@ -483,132 +552,165 @@ class ProfileScreen extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 40,
-              height: 4,
+              width: 40, height: 4,
               decoration: BoxDecoration(
                   color: isDark ? Colors.white24 : Colors.black26,
                   borderRadius: BorderRadius.circular(2)),
             ),
             const SizedBox(height: 20),
-            Text('Cambiar rol',
-                style: TextStyle(
-                    color: textColor,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text('Selecciona tu rol en la aplicación',
-                style: TextStyle(color: subColor, fontSize: 13)),
-            const SizedBox(height: 24),
-            Container(
-              decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.white.withOpacity( 0.06)
-                    : const Color(0xFFF0F4F8),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                    color: isDark ? Colors.white10 : Colors.black12),
+            Text('Foto de perfil',
+                style: TextStyle(color: textColor, fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 20),
+            if (user.avatar.isNotEmpty || user.avatarLocalPath.isNotEmpty)
+              _AvatarOption(
+                icon: Icons.visibility_outlined,
+                label: 'Ver foto',
+                color: textColor,
+                onTap: () {
+                  Navigator.pop(context);
+                  _viewAvatar(context, user, isDark, bgColor);
+                },
               ),
-              padding: const EdgeInsets.all(4),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        ref.read(userProfileProvider.notifier).update(
-                            user.copyWith(role: UserRole.passenger));
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('Rol cambiado a Pasajero ✅')),
-                        );
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        decoration: BoxDecoration(
-                          color: user.role == UserRole.passenger
-                              ? primary.withOpacity( 0.15)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(12),
-                          border: user.role == UserRole.passenger
-                              ? Border.all(
-                                  color: primary.withOpacity( 0.5))
-                              : null,
-                        ),
-                        child: Column(
-                          children: [
-                            Icon(Icons.person,
-                                color: user.role == UserRole.passenger
-                                    ? primary
-                                    : subColor,
-                                size: 28),
-                            const SizedBox(height: 8),
-                            Text('Pasajero',
-                                style: TextStyle(
-                                    color: user.role == UserRole.passenger
-                                        ? primary
-                                        : subColor,
-                                    fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        ref.read(userProfileProvider.notifier).update(
-                            user.copyWith(role: UserRole.driver));
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('Rol cambiado a Conductor ✅')),
-                        );
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        decoration: BoxDecoration(
-                          color: user.role == UserRole.driver
-                              ? secondary.withOpacity( 0.15)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(12),
-                          border: user.role == UserRole.driver
-                              ? Border.all(
-                                  color: secondary.withOpacity( 0.5))
-                              : null,
-                        ),
-                        child: Column(
-                          children: [
-                            Icon(Icons.drive_eta,
-                                color: user.role == UserRole.driver
-                                    ? secondary
-                                    : subColor,
-                                size: 28),
-                            const SizedBox(height: 8),
-                            Text('Conductor',
-                                style: TextStyle(
-                                    color: user.role == UserRole.driver
-                                        ? secondary
-                                        : subColor,
-                                    fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+            _AvatarOption(
+              icon: Icons.camera_alt_outlined,
+              label: 'Tomar foto',
+              color: textColor,
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage(ref, ImageSource.camera);
+              },
             ),
-            const SizedBox(height: 24),
+            _AvatarOption(
+              icon: Icons.photo_library_outlined,
+              label: 'Elegir de galería',
+              color: textColor,
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage(ref, ImageSource.gallery);
+              },
+            ),
+            if (user.avatar.isNotEmpty || user.avatarLocalPath.isNotEmpty)
+              _AvatarOption(
+                icon: Icons.delete_outline,
+                label: 'Eliminar foto',
+                color: Colors.red,
+                onTap: () {
+                  Navigator.pop(context);
+                  _removeAvatar(ref);
+                },
+              ),
+            const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
               child: TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: Text('Cerrar',
-                    style: TextStyle(color: subColor)),
+                child: Text('Cancelar', style: TextStyle(color: subColor)),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickImage(WidgetRef ref, ImageSource source) async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: source, maxWidth: 1024, maxHeight: 1024);
+    if (picked == null) return;
+
+    setState(() => _isUploading = true);
+    final url = await ref.read(userProfileProvider.notifier).updateAvatar(picked.path);
+    setState(() => _isUploading = false);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(url != null ? 'Foto actualizada ✅' : 'Error al subir foto'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _removeAvatar(WidgetRef ref) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar foto'),
+        content: const Text('¿Eliminar foto de perfil?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await ref.read(userProfileProvider.notifier).removeAvatar();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Foto eliminada')),
+        );
+      }
+    }
+  }
+
+  void _viewAvatar(BuildContext context, UserProfile user, bool isDark, Color bgColor) {
+    final imageProvider = user.avatar.startsWith('http')
+        ? CachedNetworkImageProvider(user.avatar) as ImageProvider
+        : FileImage(File(user.avatarLocalPath)) as ImageProvider;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            iconTheme: const IconThemeData(color: Colors.white),
+            elevation: 0,
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              child: Image(image: imageProvider, fit: BoxFit.contain),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AvatarOption extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _AvatarOption({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+        margin: const EdgeInsets.only(bottom: 4),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 22),
+            const SizedBox(width: 14),
+            Text(label, style: TextStyle(color: color, fontSize: 15, fontWeight: FontWeight.w500)),
           ],
         ),
       ),
@@ -761,7 +863,7 @@ class _ReviewCard extends StatelessWidget {
           children: [
             CircleAvatar(
               radius: 20,
-              backgroundColor: secondary.withOpacity( 0.15),
+              backgroundColor: secondary.withValues(alpha:  0.15),
               child: Text(avatar,
                   style: TextStyle(
                       color: secondary,
@@ -832,7 +934,7 @@ class _InputField extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
         decoration: BoxDecoration(
           color: isDark
-              ? Colors.white.withOpacity( 0.06)
+              ? Colors.white.withValues(alpha:  0.06)
               : const Color(0xFFF0F4F8),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: border),
