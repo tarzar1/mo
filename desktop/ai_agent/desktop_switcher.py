@@ -1,4 +1,4 @@
-﻿"""Control de Escritorios Virtuales de Windows
+"""Control de Escritorios Virtuales de Windows
 Usa keyboard library para Win+Ctrl+Left/Right (mas fiable que pyautogui).
 Captura, ejecuta acciones y vuelve."""
 

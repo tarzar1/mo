@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vision RPA Pro — Tiempo Real</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a1a;color:#e0e0e0;font-family:Consolas,monospace;overflow:hidden;height:100vh;display:flex}
+.left{flex:1;display:flex;flex-direction:column;border-right:1px solid #1a1a3a}
+.right{width:380px;display:flex;flex-direction:column;padding:8px}
+.feed-container{flex:1;display:flex;align-items:center;justify-content:center;background:#000;position:relative}
+.feed-container img{max-width:100%;max-height:100%;object-fit:contain}
+.status-bar{display:flex;align-items:center;gap:12px;padding:6px 12px;background:#111;font-size:11px}
+.status-bar .dot{width:8px;height:8px;border-radius:50%;background:#0f0;animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:0.5}}
+.panel-header{font-size:12px;font-weight:bold;padding:6px 0;border-bottom:1px solid #1a1a3a;margin-bottom:4px}
+.green{color:#00d97e}.blue{color:#4488ff}.yellow{color:#ffaa00}.red{color:#ff4444}
+.detections{flex:1;overflow-y:auto;margin-bottom:8px}
+.det-item{display:flex;align-items:center;padding:4px 6px;margin:2px 0;background:#111;border-radius:4px;font-size:10px;cursor:pointer}
+.det-item:hover{background:#1a1a3a}
+.det-item .name{flex:1}
+.det-item .coords{color:#888;margin:0 6px}
+.det-item button{background:#8B0000;color:#fff;border:none;padding:2px 10px;font-size:10px;cursor:pointer;border-radius:3px;font-family:Consolas}
+.det-item button:hover{background:#aa0000}
+.description{font-size:10px;color:#aaa;padding:4px;background:#111;border-radius:4px;margin-bottom:8px;max-height:120px;overflow-y:auto;white-space:pre-wrap}
+.input-area{display:flex;gap:4px;padding:6px 0;border-top:1px solid #1a1a3a}
+.input-area input{flex:1;background:#111;border:1px solid #333;color:#fff;padding:6px 8px;font-size:11px;font-family:Consolas;border-radius:4px;outline:none}
+.input-area input:focus{border-color:#00d97e}
+.input-area button{background:#1a5c2a;color:#fff;border:none;padding:6px 12px;font-size:10px;cursor:pointer;border-radius:4px;font-family:Consolas}
+.input-area .exec-btn{background:#8B0000}
+.controls{display:flex;gap:4px;margin-bottom:4px}
+.controls button{background:#111;color:#888;border:1px solid #333;padding:3px 8px;font-size:10px;cursor:pointer;border-radius:3px;font-family:Consolas}
+.controls button.active{color:#00d97e;border-color:#00d97e}
+.fps{color:#888;font-size:10px}
+</style>
+</head>
+<body>
+
+<div class="left">
+  <div class="status-bar">
+    <span class="dot"></span>
+    <span class="green">VISION RPA PRO</span>
+    <span style="color:#888">|</span>
+    <span>Qwen2.5-VL-7B</span>
+    <span style="color:#888">|</span>
+    <span id="status">Conectando...</span>
+    <span style="flex:1"></span>
+    <span id="fps" class="fps"></span>
+  </div>
+  <div class="feed-container">
+    <img id="feed" src="http://192.168.4.23:8000/feed" alt="Live Feed" />
+  </div>
+</div>
+
+<div class="right">
+  <div class="panel-header green">LO QUE VE QWEN</div>
+  <div class="description" id="desc">Analizando pantalla...</div>
+  
+  <div class="panel-header yellow">ELEMENTOS DETECTADOS</div>
+  <div class="controls">
+    <button onclick="toggleAutoClick()" id="autoBtn">Auto-Click OFF</button>
+    <button onclick="refreshDetections()">Refrescar</button>
+  </div>
+  <div class="detections" id="dets">Cargando...</div>
+  
+  <div class="input-area">
+    <input id="taskInput" placeholder="Tarea: busca fortnite, crea cuenta..." onkeydown="if(event.key==='Enter')sendTask()">
+    <button onclick="sendTask()">Plan</button>
+    <button class="exec-btn" onclick="sendCommand()">Cmd</button>
+  </div>
+</div>
+
+<script>
+const API = 'http://192.168.4.23:8000';
+let autoClick = false;
+let lastFps = 0;
+
+async function refreshDetections() {
+  try {
+    const r = await fetch(`${API}/detections`);
+    const data = await r.json();
+    
+    document.getElementById('desc').textContent = data.description || 'Analizando...';
+    document.getElementById('status').textContent = data.detections?.length ? 
+      `${data.detections.length} elementos` : 'Sin detecciones';
+    
+    const container = document.getElementById('dets');
+    container.innerHTML = '';
+    
+    if (!data.detections?.length) {
+      container.innerHTML = '<div style="color:#666;font-size:10px;padding:8px">Esperando detecciones de Qwen...</div>';
+    } else {
+      data.detections.forEach((d, i) => {
+        const row = document.createElement('div');
+        row.className = 'det-item';
+        row.innerHTML = `
+          <span class="name">🎯 ${d.name}</span>
+          <span class="coords">(${d.x},${d.y})</span>
+          <button onclick="clickElement(${d.x},${d.y},'${d.name.replace(/'/g,"\\'")}')">Click</button>
+        `;
+        container.appendChild(row);
+        
+        if (autoClick && i === 0) {
+          setTimeout(() => clickElement(d.x, d.y, d.name), 2000);
+        }
+      });
+    }
+  } catch(e) {
+    document.getElementById('status').textContent = 'Error conexion';
+  }
+}
+
+async function clickElement(x, y, name) {
+  try {
+    await fetch(`${API}/command`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action: 'click', params: {x, y}})
+    });
+    document.getElementById('status').textContent = `Click: ${name} (${x},${y})`;
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+async function sendTask() {
+  const task = document.getElementById('taskInput').value.trim();
+  if (!task) return;
+  document.getElementById('taskInput').value = '';
+  document.getElementById('status').textContent = `Plan: ${task}`;
+  try {
+    await fetch(`${API}/task`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({task})
+    });
+  } catch(e) { console.error(e); }
+}
+
+async function sendCommand() {
+  const cmd = document.getElementById('taskInput').value.trim();
+  if (!cmd) return;
+  const parts = cmd.split(' ');
+  const action = parts[0];
+  const text = parts.slice(1).join(' ');
+  try {
+    await fetch(`${API}/command`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action, params: action === 'type' || action === 'press' || action === 'click_text' ? {text} : {}})
+    });
+  } catch(e) { console.error(e); }
+}
+
+function toggleAutoClick() {
+  autoClick = !autoClick;
+  document.getElementById('autoBtn').textContent = `Auto-Click ${autoClick ? 'ON' : 'OFF'}`;
+  document.getElementById('autoBtn').className = autoClick ? 'active' : '';
+}
+
+// Poll detections
+setInterval(refreshDetections, 2000);
+refreshDetections();
+</script>
+</body>
+</html>
